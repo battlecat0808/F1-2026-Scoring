@@ -1,130 +1,47 @@
-import streamlit as st
-import pandas as pd
-import json
-import plotly.express as px
+# --- 這裡接在 st.rerun() 之後 ---
 
-# --- 頁面設定 ---
-st.set_page_config(page_title="2026 F1 Scoring Pro", page_icon="🏎️", layout="wide")
-
-# --- 數據初始化 ---
-# 確保這些變數在整個會話中持續存在
-if "stats" not in st.session_state:
-    st.session_state.stats = {d: {"team": t, "points": 0, "ranks": [], "point_history": [0], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False} 
-                             for t, ds in {
-                                "McLaren": ["Lando Norris", "Oscar Piastri"],
-                                "Ferrari": ["Lewis Hamilton", "Charles Leclerc"],
-                                "Red Bull": ["Max Verstappen", "Isack Hadjar"],
-                                "Mercedes": ["George Russell", "Kimi Antonelli"],
-                                "Aston Martin": ["Fernando Alonso", "Lance Stroll"],
-                                "Audi": ["Nico Hulkenberg", "Gabriel Bortoleto"],
-                                "Williams": ["Carlos Sainz", "Alex Albon"],
-                                "Alpine": ["Pierre Gasly", "Franco Colapinto"],
-                                "Racing Bulls": ["Liam Lawson", "Arvid Lindblad"],
-                                "Haas": ["Esteban Ocon", "Oliver Bearman"],
-                                "APX-CTWR": ["Yuki Tsunoda", "Ethan Tan"]
-                             }.items() for d in ds}
-    st.session_state.race_no = 0
-
-# --- 核心規則函數 ---
-def get_race_points(rank):
-    return {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}.get(rank, 0)
-
-def get_sprint_points(rank, is_top_10):
-    pts = {1:5, 2:3, 3:1}.get(rank, 0)
-    if not is_top_10:
-        pts += {1:8, 2:7, 3:6, 4:5, 5:4, 6:3, 7:2, 8:1}.get(rank, 0)
-    return pts
-
-# --- 側邊欄 ---
-with st.sidebar:
-    st.header("💾 數據管理")
-    backup_input = st.text_area("在此貼上存檔代碼：", height=100)
-    if st.button("載入存檔"):
-        try:
-            data = json.loads(backup_input)
-            st.session_state.stats = data["stats"]
-            st.session_state.race_no = data["race_no"]
-            st.success(f"已載入第 {st.session_state.race_no} 場進度")
-            st.rerun()
-        except:
-            st.error("格式錯誤")
+with tab_driver:
+    st.subheader("👤 車手年度積分榜 (WDC)")
+    # 排序邏輯：總分 > P1 > P2 > P3 > 平均完賽排名
+    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     
-    if st.button("🚨 重置全賽季"):
-        for key in st.session_state.keys(): del st.session_state[key]
-        st.rerun()
+    d_df = pd.DataFrame([
+        [i+1, n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], round(sum(s['ranks'])/len(s['ranks']),1) if s['ranks'] else "-"]
+        for i, (n, s) in enumerate(d_sort)
+    ], columns=["排名", "車手", "車隊", "積分", "P1/2/3", "DNF", "平均完賽"])
+    st.dataframe(d_df, use_container_width=True, hide_index=True) # 改用 dataframe 比較美觀
 
-# --- 主介面 ---
-st.title(f"🏎️ 2026 F1 賽季 - 當前第 {st.session_state.race_no} 場結束")
+with tab_team:
+    st.subheader("🏎️ 車隊年度積分榜 (WCC)")
+    t_points = {}
+    for d, s in st.session_state.stats.items():
+        t_points[s['team']] = t_points.get(s['team'], 0) + s['points']
+    t_sort = sorted(t_points.items(), key=lambda x: x[1], reverse=True)
+    t_df = pd.DataFrame([[i+1, t, p] for i, (t, p) in enumerate(t_sort)], columns=["排名", "車隊", "總積分"])
+    st.dataframe(t_df, use_container_width=True, hide_index=True)
 
-tab_input, tab_driver, tab_team, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 趨勢圖"])
-
-with tab_input:
-    next_race = st.session_state.race_no + 1
-    st.subheader(f"📝 輸入第 {next_race} 場成績")
-    race_type = st.radio("類型：", ["正賽", "衝刺賽"], horizontal=True)
-    
-    # 判定 Top 10 (基於上一場結束後的排名)
-    current_ranking = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1'], st.session_state.stats[x]['p2'], st.session_state.stats[x]['p3']), reverse=True)
-    top_10_set = set(current_ranking[:10])
-
-    # 使用 Form 確保輸入時不會一直刷新
-    with st.form("race_input_form"):
-        input_ranks = {}
-        cols = st.columns(3)
-        for i, driver in enumerate(st.session_state.stats.keys()):
-            with cols[i % 3]:
-                input_ranks[driver] = st.text_input(driver, key=f"f_{driver}", placeholder="1-22/R")
+with tab_chart:
+    st.subheader("📈 賽季積分增長趨勢")
+    if st.session_state.race_no == 0:
+        st.info("目前尚無比賽數據，請先輸入第一場成績。")
+    else:
+        chart_data = []
+        for d, s in st.session_state.stats.items():
+            for i, p in enumerate(s['point_history']):
+                chart_data.append({"場次": i, "車手": d, "積分": p, "車隊": s['team']})
         
-        submitted = st.form_submit_button("確認提交成績")
-        
-        if submitted:
-            # 驗證邏輯
-            processed = {}
-            used = set()
-            err = False
-            for d, r in input_ranks.items():
-                val = r.strip().upper()
-                if val == 'R': processed[d] = 22
-                else:
-                    try:
-                        n = int(val)
-                        if 1 <= n <= 22 and n not in used:
-                            processed[d] = n
-                            used.add(n)
-                        else: err = True
-                    except: err = True
+        if chart_data:
+            df_plot = pd.DataFrame(chart_data)
+            # 建立圖表
+            fig = px.line(df_plot, x="場次", y="積分", color="車手", markers=True, 
+                         hover_data=["車隊"], template="plotly_dark", height=600)
             
-            if err or len(processed) < 22:
-                st.error("請檢查排名是否重複或漏填！")
-            else:
-                # 計算積分並存入 session_state
-                st.session_state.race_no += 1
-                sorted_results = sorted(processed.items(), key=lambda x: x[1])
-                pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
-                
-                for d, r in sorted_results:
-                    s = st.session_state.stats[d]
-                    s["ranks"].append(r)
-                    if r == 1: s["p1"] += 1
-                    elif r == 2: s["p2"] += 1
-                    elif r == 3: s["p3"] += 1
-                    if r == 22:
-                        s["dnf"] += 1
-                        if s["dnf"] % 5 == 0: s["penalty_next"] = True
-                    
-                    p = 0
-                    if race_type == "衝刺賽":
-                        p = get_sprint_points(r, d in top_10_set)
-                    else:
-                        if pts_pool and r <= 10:
-                            if s["penalty_next"]: s["penalty_next"] = False
-                            else: p = pts_pool.pop(0)
-                    
-                    s["points"] += p
-                    s["point_history"].append(s["points"])
-                
-                st.success(f"✅ 第 {st.session_state.race_no} 場已入庫！")
-                st.rerun() # 強制刷新顯示新數據
+            # 優化圖表外觀
+            fig.update_layout(xaxis_title="比賽場次 (0為賽季前)", yaxis_title="累積總積分")
+            st.plotly_chart(fig, use_container_width=True)
 
-# --- 顯示與圖表部分 (保持不變) ---
-# ... (與上個版本相同，包含 WDC, WCC 和 Plotly 圖表)
+# --- 存檔代碼區 ---
+st.divider()
+st.write("### 🔑 本次更新後的存檔代碼 (請複製保存)")
+save_code = json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no})
+st.code(save_code)
