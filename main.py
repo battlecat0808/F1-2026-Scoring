@@ -28,12 +28,6 @@ if "stats" not in st.session_state:
     st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
 
-# --- 手動清空輸入框的函數 ---
-def reset_form_inputs():
-    for team, cfg in TEAM_CONFIG.items():
-        for driver in cfg["drivers"]:
-            st.session_state[f"f_{driver}"] = ""
-
 # --- 側邊欄 ---
 with st.sidebar:
     st.header("💾 數據管理")
@@ -51,7 +45,7 @@ with st.sidebar:
         st.session_state.clear(); st.rerun()
 
 # --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (第{st.session_state.race_no}週)")
+st.title(f"🏎️ 2026 F1 賽季 (正式賽：{st.session_state.race_no})")
 tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 數據圖表"])
 
 with tab_input:
@@ -64,8 +58,9 @@ with tab_input:
                                       st.session_state.stats[x]['p3']), reverse=True)
     top_10_names = set(wdc_order[:10])
 
+    # 關鍵優化：這裡不設 clear_on_submit，由我們邏輯控制 rerun 時機來決定清空
     with st.form("race_form"):
-        st.info("💡 提示：輸入有誤時數據會保留。成功提交後會自動清空。")
+        st.info("💡 輸入說明：數字 1-22 或 R (DNF)。輸入有誤時會保留數據供修正。")
         inputs = {}
         cols = st.columns(2)
         idx = 0
@@ -74,8 +69,8 @@ with tab_input:
                 st.markdown(f"**{team}**")
                 for driver in cfg["drivers"]:
                     s = st.session_state.stats[driver]
-                    # 使用 key 來綁定 session_state
-                    inputs[driver] = st.text_input(f"#{s['no']} {driver}", key=f"f_{driver}", placeholder="1-22 / R")
+                    # 不再手動操作 session_state，讓 Form 正常運作
+                    inputs[driver] = st.text_input(f"#{s['no']} {driver}", key=f"f_{driver}", placeholder="排名或 R")
             idx += 1
             
         submitted = st.form_submit_button("🏁 提交本場成績")
@@ -84,12 +79,13 @@ with tab_input:
             processed, used_ranks, err = {}, set(), False
             err_msg = ""
             
+            # 檢查邏輯
             for d, r in inputs.items():
                 v = r.strip().upper()
                 if v == 'R': 
                     processed[d] = 'DNF'
                 elif v == '':
-                    err = True; err_msg = "有車手漏填成績！"
+                    err = True; err_msg = "漏填了！"
                 else:
                     try:
                         n = int(v)
@@ -98,16 +94,17 @@ with tab_input:
                                 processed[d] = n
                                 used_ranks.add(n)
                             else:
-                                err = True; err_msg = f"排名 {n} 重複了！"
+                                err = True; err_msg = f"排名 {n} 重複！"
                         else:
-                            err = True; err_msg = f"排名 {n} 超出範圍！"
+                            err = True; err_msg = f"排名 {n} 範圍錯誤！"
                     except:
-                        err = True; err_msg = f"'{v}' 無效！"
+                        err = True; err_msg = f"輸入 '{v}' 無效！"
             
             if err:
-                st.error(f"🚫 {err_msg} (請修正後重新提交)")
+                st.error(f"❌ {err_msg}")
+                # 這裡不執行 st.rerun()，所以輸入內容會留在畫面上
             else:
-                # --- 成功提交後才執行的邏輯 ---
+                # 只有成功才會執行數據更新
                 if r_type == "正賽":
                     for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
                     t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
@@ -152,11 +149,15 @@ with tab_input:
                     t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                     st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
                 
-                # 重要：成功後手動清空 session_state 裡的輸入值
-                reset_form_inputs()
+                # 成功提交後，手動清理 session_state 的輸入暫存
+                for d in inputs.keys():
+                    if f"f_{d}" in st.session_state:
+                        del st.session_state[f"f_{d}"]
+                
+                st.success("✅ 錄入成功！")
                 st.rerun()
 
-# --- 顯示介面保持不變 ---
+# --- 榜單與圖表 (同前) ---
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
