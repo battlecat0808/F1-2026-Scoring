@@ -5,7 +5,7 @@ import plotly.express as px
 
 st.set_page_config(page_title="2026 F1 Scoring Ultimate", page_icon="🏎️", layout="wide")
 
-# --- 設定 (車號更新) ---
+# --- 設定 (車號：Norris #1, Verstappen #3, Ethan #9) ---
 TEAM_CONFIG = {
     "McLaren": {"color": "#FF8700", "drivers": {"Lando Norris": "1", "Oscar Piastri": "81"}},
     "Ferrari": {"color": "#E80020", "drivers": {"Lewis Hamilton": "44", "Charles Leclerc": "16"}},
@@ -25,6 +25,7 @@ if "stats" not in st.session_state:
     st.session_state.stats = {d: {"no": c, "team": t, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0} 
                              for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
     st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
+    st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()} # 車隊排名趨勢紀錄
     st.session_state.race_no = 0
 
 # --- 側邊欄 ---
@@ -37,6 +38,7 @@ with st.sidebar:
             st.session_state.stats = data["stats"]
             st.session_state.race_no = data["race_no"]
             st.session_state.team_history = data["team_history"]
+            st.session_state.team_prev_rank = data.get("team_prev_rank", {t: 0 for t in TEAM_CONFIG.keys()})
             st.success("讀取成功！"); st.rerun()
         except: st.error("代碼格式不正確")
     if st.button("🚨 重置全賽季"):
@@ -50,7 +52,7 @@ with tab_input:
     r_type = st.radio("選擇比賽類型：", ["正賽", "衝刺賽"], horizontal=True)
     top_10 = set(sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1']), reverse=True)[:10])
 
-    with st.form("race_form", clear_on_submit=True): # 加入提交後自動清空
+    with st.form("race_form", clear_on_submit=True):
         cols = st.columns(3)
         inputs = {d: st.text_input(f"#{s['no']} {d}", key=f"f_{d}") for d, s in st.session_state.stats.items()}
         if st.form_submit_button("提交成績"):
@@ -68,8 +70,14 @@ with tab_input:
             if err or len(processed) < 22: st.error("排名重複或漏填！")
             else:
                 if r_type == "正賽":
+                    # 紀錄車手升降
                     wdc_now = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1']), reverse=True)
                     for idx, name in enumerate(wdc_now, 1): st.session_state.stats[name]["prev_rank"] = idx
+                    
+                    # 紀錄車隊升降
+                    t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
+                    for idx, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = idx
+                    
                     st.session_state.race_no += 1
                 
                 curr_race_mark = st.session_state.race_no if r_type == "正賽" else st.session_state.race_no + 0.5
@@ -93,14 +101,13 @@ with tab_input:
                                 else: p = pts_pool.pop(0)
                         s["points"] += p
                         s["point_history"].append({"race": curr_race_mark, "pts": s["points"]})
-                    else: # 衝刺賽邏輯
+                    else:
                         if r != 'DNF':
                             p += {1:5, 2:3, 3:1}.get(r, 0)
                             if d not in top_10: p += {1:8, 2:7, 3:6, 4:5, 5:4, 6:3, 7:2, 8:1}.get(r, 0)
                         s["points"] += p
                         s["point_history"].append({"race": curr_race_mark, "pts": s["points"]})
 
-                # 更新車隊歷史
                 for t in TEAM_CONFIG.keys():
                     t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                     st.session_state.team_history[t].append({"race": curr_race_mark, "pts": t_sum})
@@ -109,15 +116,28 @@ with tab_input:
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_rows = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no > 1 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
-    st.dataframe(pd.DataFrame(d_rows, columns=["趨勢","排名","#","車手","車隊","積分","P1/2/3","DNF","Avg"]), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(d_rows, columns=["趨勢","排名","#","車手","車隊","積分","P1/P2/P3","DNF","Avg"]), use_container_width=True, hide_index=True)
 
 with tab_wcc:
-    t_rows = []
+    t_list = []
     for t in TEAM_CONFIG.keys():
         ds = [s for d, s in st.session_state.stats.items() if s["team"] == t]
+        t_pts = sum(d["points"] for d in ds)
+        t_p1 = sum(d["p1"] for d in ds)
+        t_p2 = sum(d["p2"] for d in ds)
+        t_p3 = sum(d["p3"] for d in ds)
         all_r = [r for d in ds for r in d["ranks"]]
-        t_rows.append([t, sum(d["points"] for d in ds), sum(d["p1"] for d in ds), sum(d["p2"] for d in ds), sum(d["p3"] for d in ds), f"{sum(all_r)/len(all_r):.3f}" if all_r else "0.000"])
-    st.dataframe(pd.DataFrame([[i+1]+r for i, r in enumerate(sorted(t_rows, key=lambda x: (x[1], x[2]), reverse=True))], columns=["排名","車隊","總分","P1","P2","P3","平均完賽"]), use_container_width=True, hide_index=True)
+        t_avg = sum(all_r)/len(all_r) if all_r else 0
+        t_list.append({"team": t, "pts": t_pts, "p1": t_p1, "p2": t_p2, "p3": t_p3, "avg": t_avg})
+    
+    t_sort = sorted(t_list, key=lambda x: (x["pts"], x["p1"], x["p2"], x["p3"]), reverse=True)
+    t_rows = []
+    for i, t in enumerate(t_sort, 1):
+        prev = st.session_state.team_prev_rank[t["team"]]
+        t_change = (f"🔼 {prev-i}" if prev-i>0 else f"🔽 {abs(prev-i)}" if prev-i<0 else "➖" if st.session_state.race_no > 1 else "")
+        t_rows.append([t_change, i, t["team"], t["pts"], f"{t['p1']}/{t['p2']}/{t['p3']}", f"{t['avg']:.3f}"])
+    
+    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢", "排名", "車隊", "總積分", "P1/P2/P3", "車隊平均排名"]), use_container_width=True, hide_index=True)
 
 with tab_chart:
     if st.session_state.race_no > 0 or any(len(s['point_history']) > 1 for s in st.session_state.stats.values()):
@@ -130,4 +150,4 @@ with tab_chart:
         st.plotly_chart(px.line(pd.DataFrame(th), x="Race", y="Points", color="Team", markers=True, color_discrete_map={t: cfg["color"] for t, cfg in TEAM_CONFIG.items()}, template="plotly_dark", height=500), use_container_width=True)
 
 st.divider()
-st.code(json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no, "team_history": st.session_state.team_history}))
+st.code(json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no, "team_history": st.session_state.team_history, "team_prev_rank": st.session_state.team_prev_rank}))
