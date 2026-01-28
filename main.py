@@ -7,9 +7,9 @@ st.set_page_config(page_title="2026 F1 Scoring Pro", page_icon="🏎️", layout
 
 # --- 車隊與車手設定 (使用車號數字) ---
 TEAM_CONFIG = {
-    "McLaren": {"color": "#FF8700", "drivers": {"Lando Norris": "4", "Oscar Piastri": "81"}},
+    "McLaren": {"color": "#FF8700", "drivers": {"Lando Norris": "1", "Oscar Piastri": "81"}},
     "Ferrari": {"color": "#E80020", "drivers": {"Lewis Hamilton": "44", "Charles Leclerc": "16"}},
-    "Red Bull": {"color": "#3671C6", "drivers": {"Max Verstappen": "1", "Isack Hadjar": "66"}},
+    "Red Bull": {"color": "#3671C6", "drivers": {"Max Verstappen": "3", "Isack Hadjar": "66"}},
     "Mercedes": {"color": "#27F4D2", "drivers": {"George Russell": "63", "Kimi Antonelli": "12"}},
     "Aston Martin": {"color": "#229971", "drivers": {"Fernando Alonso": "14", "Lance Stroll": "18"}},
     "Audi": {"color": "#F50A20", "drivers": {"Nico Hulkenberg": "27", "Gabriel Bortoleto": "5"}},
