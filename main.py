@@ -86,8 +86,37 @@ with tabs[0]:
                 st.rerun()
 
 with tabs[1]:
-    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
-    st.dataframe(pd.DataFrame([[i+1, n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], round(sum(s['ranks'])/len(s['ranks']),1) if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort)], columns=["排名","車手","車隊","積分","P1/2/3","DNF","Avg"]), use_container_width=True, hide_index=True)
+    with tabs[1]:
+    # 1. 重新排序：積分 > P1 > P2 > P3 > 平均完賽 (越小越好)
+    d_sort = sorted(st.session_state.stats.items(), 
+                    key=lambda x: (x[1]['points'], 
+                                   x[1]['p1'], 
+                                   x[1]['p2'], 
+                                   x[1]['p3'], 
+                                   # 使用負號是因為 sorted 預設 reverse=True，
+                                   # 平均排名越小(越前面)的人應該排越前面
+                                   -(sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 99)), 
+                    reverse=True)
+    
+    # 2. 建立表格數據，將 round(..., 1) 改為 round(..., 3)
+    driver_table_data = []
+    for i, (name, s) in enumerate(d_sort):
+        avg_rank = sum(s['ranks'])/len(s['ranks']) if s['ranks'] else None
+        driver_table_data.append([
+            i+1, 
+            name, 
+            s['team'], 
+            s['points'], 
+            f"{s['p1']}/{s['p2']}/{s['p3']}", 
+            s['dnf'], 
+            f"{avg_rank:.3f}" if avg_rank is not None else "-"  # 強制顯示三位小數
+        ])
+    
+    # 3. 顯示表格
+    st.dataframe(pd.DataFrame(driver_table_data, 
+                               columns=["排名","車手","車隊","積分","P1/2/3","DNF","精確平均排名"]), 
+                 use_container_width=True, 
+                 hide_index=True)
 
 with tabs[2]:
     t_pts = {}
