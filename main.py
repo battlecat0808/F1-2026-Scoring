@@ -27,32 +27,28 @@ if "stats" not in st.session_state:
     st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
     st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
-    st.session_state.form_id = 0  # 用來強制重置輸入框
+    st.session_state.form_id = 0
 
 # --- 側邊欄 ---
 with st.sidebar:
     st.header("💾 數據管理")
     backup_input = st.text_area("存檔代碼：", height=100)
-    if st.button("載入"):
+    if st.button("載入存檔"):
         try:
             data = json.loads(backup_input)
-            st.session_state.stats = data["stats"]
-            st.session_state.race_no = data["race_no"]
-            st.session_state.team_history = data["team_history"]
-            st.session_state.team_prev_rank = data.get("team_prev_rank", {t: 0 for t in TEAM_CONFIG.keys()})
-            st.success("成功！"); st.rerun()
-        except: st.error("錯誤")
+            st.session_state.update(data)
+            st.success("讀取成功！"); st.rerun()
+        except: st.error("代碼格式不正確")
     if st.button("🚨 重置全賽季"):
         st.session_state.clear(); st.rerun()
 
 # --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (第 {st.session_state.race_no} 場)")
-tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 輸入成績", "👤 車手榜", "🏎️ 車隊榜", "📈 趨勢圖"])
+st.title(f"🏎️ 2026 F1 賽季 (Rd. {st.session_state.race_no})")
+tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 數據圖表"])
 
 with tab_input:
-    r_type = st.radio("比賽類型：", ["正賽", "衝刺賽"], horizontal=True)
+    r_type = st.radio("本場類型：", ["正賽", "衝刺賽"], horizontal=True)
     
-    # 決定 Top 10 名單
     wdc_order = sorted(st.session_state.stats.keys(), 
                        key=lambda x: (st.session_state.stats[x]['points'], 
                                       st.session_state.stats[x]['p1'], 
@@ -60,40 +56,39 @@ with tab_input:
                                       st.session_state.stats[x]['p3']), reverse=True)
     top_10_names = set(wdc_order[:10])
 
-    # 輸入區域
+    # --- 二欄式輸入區域 ---
     st.markdown("---")
     inputs = {}
     cols = st.columns(2)
-    idx = 0
-    # 這裡的 key 加上 form_id，一旦 ID 變了，所有框框會強制清空
-    for team, cfg in TEAM_CONFIG.items():
+    for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
         with cols[idx % 2]:
-            st.subheader(f"{team}")
-            for driver in cfg["drivers"]:
-                k = f"input_{driver}_{st.session_state.form_id}"
-                inputs[driver] = st.text_input(f"#{cfg['drivers'][driver]} {driver}", key=k, placeholder="1-22 / R")
-        idx += 1
+            st.markdown(f"**{team}**") # 小標
+            for driver, no in cfg["drivers"].items():
+                # 動態 Key 保證成功提交後會清空
+                k = f"in_{driver}_{st.session_state.form_id}"
+                inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="排名 (1-22) 或 R")
+            st.write("") # 增加車隊間距
 
-    if st.button("🚀 提交成績", use_container_width=True):
+    if st.button("🚀 提交成績並計算積分", use_container_width=True, type="primary"):
         processed, used_ranks, err = {}, set(), False
         err_msg = ""
         
         for d, r in inputs.items():
             v = r.strip().upper()
             if v == 'R': processed[d] = 'DNF'
-            elif not v: err = True; err_msg = "有欄位沒填！"
+            elif not v: err = True; err_msg = "還有車手成績沒填到喔！"
             else:
                 try:
                     n = int(v)
                     if 1 <= n <= 22 and n not in used_ranks:
                         processed[d] = n; used_ranks.add(n)
-                    else: err = True; err_msg = f"排名 {n} 重複或超出範圍！"
-                except: err = True; err_msg = f"'{v}' 不是有效格式！"
+                    else: err = True; err_msg = f"排名 {n} 有重複或數值超出 1-22！"
+                except: err = True; err_msg = f"'{v}' 不是正確的排名格式。"
 
         if err:
-            st.error(f"❌ 提交失敗：{err_msg}")
+            st.error(f"❌ 無法提交：{err_msg}")
         else:
-            # --- 核心邏輯處理 ---
+            # --- 積分計算邏輯 ---
             if r_type == "正賽":
                 for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
                 t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
@@ -138,12 +133,12 @@ with tab_input:
                 t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                 st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
             
-            # 關鍵：提交成功後，改變 form_id，徹底清空所有輸入框
+            # 關鍵：提交成功後改變 form_id，實現自動清空
             st.session_state.form_id += 1
-            st.success("✅ 數據已成功錄入！")
+            st.success("✅ 成績已錄入，榜單已更新！")
             st.rerun()
 
-# --- 顯示介面 ---
+# --- 榜單與圖表與之前一致 ---
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
@@ -162,9 +157,7 @@ with tab_wcc:
 with tab_chart:
     if any(len(s['point_history']) > 1 for s in st.session_state.stats.values()):
         dh = [{"Race": pt["race"], "Driver": f"#{s['no']} {d}", "Points": pt["pts"]} for d, s in st.session_state.stats.items() for pt in s['point_history']]
-        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, color_discrete_map={f"#{s['no']} {d}": TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, template="plotly_dark", height=500, title="車手積分趨勢"), use_container_width=True)
-        th = [{"Race": pt["race"], "Team": t, "Points": pt["pts"]} for t, h in st.session_state.team_history.items() for pt in h]
-        st.plotly_chart(px.line(pd.DataFrame(th), x="Race", y="Points", color="Team", markers=True, color_discrete_map={t: cfg["color"] for t, cfg in TEAM_CONFIG.items()}, template="plotly_dark", height=500, title="車隊積分趨勢"), use_container_width=True)
+        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, color_discrete_map={f"#{s['no']} {d}": TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, template="plotly_dark", height=500), use_container_width=True)
 
 st.divider()
 st.code(json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no, "team_history": st.session_state.team_history, "team_prev_rank": st.session_state.team_prev_rank}))
