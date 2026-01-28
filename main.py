@@ -28,6 +28,12 @@ if "stats" not in st.session_state:
     st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
 
+# --- 手動清空輸入框的函數 ---
+def reset_form_inputs():
+    for team, cfg in TEAM_CONFIG.items():
+        for driver in cfg["drivers"]:
+            st.session_state[f"f_{driver}"] = ""
+
 # --- 側邊欄 ---
 with st.sidebar:
     st.header("💾 數據管理")
@@ -45,13 +51,12 @@ with st.sidebar:
         st.session_state.clear(); st.rerun()
 
 # --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (正式賽：{st.session_state.race_no})")
+st.title(f"🏎️ 2026 F1 賽季 (第{st.session_state.race_no}週)")
 tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 數據圖表"])
 
 with tab_input:
     r_type = st.radio("本場類型：", ["正賽", "衝刺賽"], horizontal=True)
     
-    # 決定誰是目前的總排 Top 10
     wdc_order = sorted(st.session_state.stats.keys(), 
                        key=lambda x: (st.session_state.stats[x]['points'], 
                                       st.session_state.stats[x]['p1'], 
@@ -59,11 +64,8 @@ with tab_input:
                                       st.session_state.stats[x]['p3']), reverse=True)
     top_10_names = set(wdc_order[:10])
 
-    # 這裡移除 clear_on_submit，手動控制清空時機
     with st.form("race_form"):
-        st.info("💡 提示：輸入完按 Tab 或 Enter 可跳轉下一格。輸入錯誤時數據會保留。")
-        
-        # 為了順暢的 Enter/Tab 跳轉，我們按照車隊順序排列輸入框
+        st.info("💡 提示：輸入有誤時數據會保留。成功提交後會自動清空。")
         inputs = {}
         cols = st.columns(2)
         idx = 0
@@ -72,6 +74,7 @@ with tab_input:
                 st.markdown(f"**{team}**")
                 for driver in cfg["drivers"]:
                     s = st.session_state.stats[driver]
+                    # 使用 key 來綁定 session_state
                     inputs[driver] = st.text_input(f"#{s['no']} {driver}", key=f"f_{driver}", placeholder="1-22 / R")
             idx += 1
             
@@ -95,18 +98,16 @@ with tab_input:
                                 processed[d] = n
                                 used_ranks.add(n)
                             else:
-                                err = True; err_msg = f"排名 {n} 重複出現了！"
+                                err = True; err_msg = f"排名 {n} 重複了！"
                         else:
-                            err = True; err_msg = f"排名 {n} 超出範圍 (1-22)！"
+                            err = True; err_msg = f"排名 {n} 超出範圍！"
                     except:
-                        err = True; err_msg = f"'{v}' 不是有效的輸入 (請輸入數字或 R)！"
+                        err = True; err_msg = f"'{v}' 無效！"
             
             if err:
-                st.error(f"🚫 {err_msg}")
-            elif len(processed) < 22:
-                st.error("🚫 還有車手沒填寫到排名喔！")
+                st.error(f"🚫 {err_msg} (請修正後重新提交)")
             else:
-                # 只有在這裡（完全正確）才會執行更新與跳轉，達成「成功才清空」
+                # --- 成功提交後才執行的邏輯 ---
                 if r_type == "正賽":
                     for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
                     t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
@@ -151,10 +152,11 @@ with tab_input:
                     t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                     st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
                 
-                st.success("✅ 成績錄入成功！")
+                # 重要：成功後手動清空 session_state 裡的輸入值
+                reset_form_inputs()
                 st.rerun()
 
-# --- 榜單與圖表邏輯保持不變 ---
+# --- 顯示介面保持不變 ---
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
