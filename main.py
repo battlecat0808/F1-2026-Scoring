@@ -59,40 +59,66 @@ with tab_input:
                                       st.session_state.stats[x]['p3']), reverse=True)
     top_10_names = set(wdc_order[:10])
 
-    with st.form("race_form", clear_on_submit=True):
-        st.write("請輸入排名 (1-22) 或 R (DNF)")
-        inputs = {d: st.text_input(f"#{s['no']} {d}", key=f"f_{d}") for d, s in st.session_state.stats.items()}
-        if st.form_submit_button("提交成績"):
+    # 這裡移除 clear_on_submit，手動控制清空時機
+    with st.form("race_form"):
+        st.info("💡 提示：輸入完按 Tab 或 Enter 可跳轉下一格。輸入錯誤時數據會保留。")
+        
+        # 為了順暢的 Enter/Tab 跳轉，我們按照車隊順序排列輸入框
+        inputs = {}
+        cols = st.columns(2)
+        idx = 0
+        for team, cfg in TEAM_CONFIG.items():
+            with cols[idx % 2]:
+                st.markdown(f"**{team}**")
+                for driver in cfg["drivers"]:
+                    s = st.session_state.stats[driver]
+                    inputs[driver] = st.text_input(f"#{s['no']} {driver}", key=f"f_{driver}", placeholder="1-22 / R")
+            idx += 1
+            
+        submitted = st.form_submit_button("🏁 提交本場成績")
+        
+        if submitted:
             processed, used_ranks, err = {}, set(), False
+            err_msg = ""
+            
             for d, r in inputs.items():
                 v = r.strip().upper()
                 if v == 'R': 
                     processed[d] = 'DNF'
+                elif v == '':
+                    err = True; err_msg = "有車手漏填成績！"
                 else:
                     try:
                         n = int(v)
-                        # 檢查：數字必須在 1-22 之間，且數字排名不能重複
-                        if 1 <= n <= 22 and n not in used_ranks: 
-                            processed[d] = n
-                            used_ranks.add(n)
-                        else: err = True
-                    except: err = True
+                        if 1 <= n <= 22:
+                            if n not in used_ranks:
+                                processed[d] = n
+                                used_ranks.add(n)
+                            else:
+                                err = True; err_msg = f"排名 {n} 重複出現了！"
+                        else:
+                            err = True; err_msg = f"排名 {n} 超出範圍 (1-22)！"
+                    except:
+                        err = True; err_msg = f"'{v}' 不是有效的輸入 (請輸入數字或 R)！"
             
-            if err or len(processed) < 22:
-                st.error("輸入錯誤：可能排名數字重複、超出範圍或有車手漏填。")
+            if err:
+                st.error(f"🚫 {err_msg}")
+            elif len(processed) < 22:
+                st.error("🚫 還有車手沒填寫到排名喔！")
             else:
+                # 只有在這裡（完全正確）才會執行更新與跳轉，達成「成功才清空」
                 if r_type == "正賽":
-                    for idx, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = idx
+                    for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
                     t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
-                    for idx, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = idx
+                    for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
                     st.session_state.race_no += 1
                 
                 curr_mark = st.session_state.race_no if r_type == "正賽" else st.session_state.race_no + 0.5
-                sorted_results = sorted(processed.items(), key=lambda x: 99 if x[1]=='DNF' else x[1])
+                sorted_res = sorted(processed.items(), key=lambda x: 99 if x[1]=='DNF' else x[1])
 
                 if r_type == "正賽":
                     pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
-                    for d, r in sorted_results:
+                    for d, r in sorted_res:
                         s = st.session_state.stats[d]
                         p = 0
                         if r == 'DNF':
@@ -110,17 +136,13 @@ with tab_input:
                         s["point_history"].append({"race": curr_mark, "pts": s["points"]})
                 else: # 衝刺賽
                     sprint_points = {d: 0 for d in st.session_state.stats.keys()}
-                    # 1. 前三名基礎分
-                    for d, r in sorted_results:
-                        if r != 'DNF':
-                            sprint_points[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
-                    # 2. 非 Top 10 的額外分
-                    non_top_10 = [(d, r) for d, r in sorted_results if d not in top_10_names and r != 'DNF']
+                    for d, r in sorted_res:
+                        if r != 'DNF': sprint_points[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
+                    non_top_10 = [(d, r) for d, r in sorted_res if d not in top_10_names and r != 'DNF']
                     non_top_10.sort(key=lambda x: x[1])
                     bonus_pool = [8, 7, 6, 5, 4, 3, 2, 1]
                     for d, r in non_top_10:
                         if bonus_pool: sprint_points[d] += bonus_pool.pop(0)
-                    # 更新
                     for d, p in sprint_points.items():
                         st.session_state.stats[d]["points"] += p
                         st.session_state.stats[d]["point_history"].append({"race": curr_mark, "pts": st.session_state.stats[d]["points"]})
@@ -128,9 +150,11 @@ with tab_input:
                 for t in TEAM_CONFIG.keys():
                     t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                     st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
+                
+                st.success("✅ 成績錄入成功！")
                 st.rerun()
 
-# --- 顯示介面 (WDC/WCC/Chart) ---
+# --- 榜單與圖表邏輯保持不變 ---
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
