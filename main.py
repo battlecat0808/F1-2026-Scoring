@@ -45,7 +45,7 @@ with st.sidebar:
         st.session_state.clear(); st.rerun()
 
 # --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (正式賽：{st.session_state.race_no})")
+st.title(f"🏎️ 2026 F1 賽季 (第{st.session_state.race_no}週)")
 tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 數據圖表"])
 
 with tab_input:
