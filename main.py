@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import plotly.express as px
 
-st.set_page_config(page_title="2026 F1 Scoring Ultimate", page_icon="🏎️", layout="wide")
+st.set_page_config(page_title="2026 F1 Scoring Final", page_icon="🏎️", layout="wide")
 
 # --- 核心設定 ---
 TEAM_CONFIG = {
@@ -27,30 +27,32 @@ if "stats" not in st.session_state:
     st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
     st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
+    st.session_state.form_id = 0  # 用來強制重置輸入框
 
 # --- 側邊欄 ---
 with st.sidebar:
     st.header("💾 數據管理")
-    backup_input = st.text_area("在此貼上存檔代碼：", height=120)
-    if st.button("載入存檔"):
+    backup_input = st.text_area("存檔代碼：", height=100)
+    if st.button("載入"):
         try:
             data = json.loads(backup_input)
             st.session_state.stats = data["stats"]
             st.session_state.race_no = data["race_no"]
             st.session_state.team_history = data["team_history"]
             st.session_state.team_prev_rank = data.get("team_prev_rank", {t: 0 for t in TEAM_CONFIG.keys()})
-            st.success("讀取成功！"); st.rerun()
-        except: st.error("存檔格式錯誤")
+            st.success("成功！"); st.rerun()
+        except: st.error("錯誤")
     if st.button("🚨 重置全賽季"):
         st.session_state.clear(); st.rerun()
 
 # --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (正式賽：{st.session_state.race_no})")
-tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📈 數據圖表"])
+st.title(f"🏎️ 2026 F1 賽季 (第 {st.session_state.race_no} 場)")
+tab_input, tab_wdc, tab_wcc, tab_chart = st.tabs(["🏁 輸入成績", "👤 車手榜", "🏎️ 車隊榜", "📈 趨勢圖"])
 
 with tab_input:
-    r_type = st.radio("本場類型：", ["正賽", "衝刺賽"], horizontal=True)
+    r_type = st.radio("比賽類型：", ["正賽", "衝刺賽"], horizontal=True)
     
+    # 決定 Top 10 名單
     wdc_order = sorted(st.session_state.stats.keys(), 
                        key=lambda x: (st.session_state.stats[x]['points'], 
                                       st.session_state.stats[x]['p1'], 
@@ -58,106 +60,90 @@ with tab_input:
                                       st.session_state.stats[x]['p3']), reverse=True)
     top_10_names = set(wdc_order[:10])
 
-    # 關鍵優化：這裡不設 clear_on_submit，由我們邏輯控制 rerun 時機來決定清空
-    with st.form("race_form"):
-        st.info("💡 輸入說明：數字 1-22 或 R (DNF)。輸入有誤時會保留數據供修正。")
-        inputs = {}
-        cols = st.columns(2)
-        idx = 0
-        for team, cfg in TEAM_CONFIG.items():
-            with cols[idx % 2]:
-                st.markdown(f"**{team}**")
-                for driver in cfg["drivers"]:
-                    s = st.session_state.stats[driver]
-                    # 不再手動操作 session_state，讓 Form 正常運作
-                    inputs[driver] = st.text_input(f"#{s['no']} {driver}", key=f"f_{driver}", placeholder="排名或 R")
-            idx += 1
-            
-        submitted = st.form_submit_button("🏁 提交本場成績")
+    # 輸入區域
+    st.markdown("---")
+    inputs = {}
+    cols = st.columns(2)
+    idx = 0
+    # 這裡的 key 加上 form_id，一旦 ID 變了，所有框框會強制清空
+    for team, cfg in TEAM_CONFIG.items():
+        with cols[idx % 2]:
+            st.subheader(f"{team}")
+            for driver in cfg["drivers"]:
+                k = f"input_{driver}_{st.session_state.form_id}"
+                inputs[driver] = st.text_input(f"#{cfg['drivers'][driver]} {driver}", key=k, placeholder="1-22 / R")
+        idx += 1
+
+    if st.button("🚀 提交成績", use_container_width=True):
+        processed, used_ranks, err = {}, set(), False
+        err_msg = ""
         
-        if submitted:
-            processed, used_ranks, err = {}, set(), False
-            err_msg = ""
-            
-            # 檢查邏輯
-            for d, r in inputs.items():
-                v = r.strip().upper()
-                if v == 'R': 
-                    processed[d] = 'DNF'
-                elif v == '':
-                    err = True; err_msg = "漏填了！"
-                else:
-                    try:
-                        n = int(v)
-                        if 1 <= n <= 22:
-                            if n not in used_ranks:
-                                processed[d] = n
-                                used_ranks.add(n)
-                            else:
-                                err = True; err_msg = f"排名 {n} 重複！"
-                        else:
-                            err = True; err_msg = f"排名 {n} 範圍錯誤！"
-                    except:
-                        err = True; err_msg = f"輸入 '{v}' 無效！"
-            
-            if err:
-                st.error(f"❌ {err_msg}")
-                # 這裡不執行 st.rerun()，所以輸入內容會留在畫面上
+        for d, r in inputs.items():
+            v = r.strip().upper()
+            if v == 'R': processed[d] = 'DNF'
+            elif not v: err = True; err_msg = "有欄位沒填！"
             else:
-                # 只有成功才會執行數據更新
-                if r_type == "正賽":
-                    for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
-                    t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
-                    for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
-                    st.session_state.race_no += 1
-                
-                curr_mark = st.session_state.race_no if r_type == "正賽" else st.session_state.race_no + 0.5
-                sorted_res = sorted(processed.items(), key=lambda x: 99 if x[1]=='DNF' else x[1])
+                try:
+                    n = int(v)
+                    if 1 <= n <= 22 and n not in used_ranks:
+                        processed[d] = n; used_ranks.add(n)
+                    else: err = True; err_msg = f"排名 {n} 重複或超出範圍！"
+                except: err = True; err_msg = f"'{v}' 不是有效格式！"
 
-                if r_type == "正賽":
-                    pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
-                    for d, r in sorted_res:
-                        s = st.session_state.stats[d]
-                        p = 0
-                        if r == 'DNF':
-                            s["ranks"].append(25); s["dnf"] += 1
-                            if s["dnf"] % 5 == 0: s["penalty_next"] = True
-                        else:
-                            s["ranks"].append(r)
-                            if r==1: s["p1"]+=1
-                            elif r==2: s["p2"]+=1
-                            elif r==3: s["p3"]+=1
-                            if pts_pool and r <= 10:
-                                if s["penalty_next"]: s["penalty_next"] = False
-                                else: p = pts_pool.pop(0)
-                        s["points"] += p
-                        s["point_history"].append({"race": curr_mark, "pts": s["points"]})
-                else: # 衝刺賽
-                    sprint_points = {d: 0 for d in st.session_state.stats.keys()}
-                    for d, r in sorted_res:
-                        if r != 'DNF': sprint_points[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
-                    non_top_10 = [(d, r) for d, r in sorted_res if d not in top_10_names and r != 'DNF']
-                    non_top_10.sort(key=lambda x: x[1])
-                    bonus_pool = [8, 7, 6, 5, 4, 3, 2, 1]
-                    for d, r in non_top_10:
-                        if bonus_pool: sprint_points[d] += bonus_pool.pop(0)
-                    for d, p in sprint_points.items():
-                        st.session_state.stats[d]["points"] += p
-                        st.session_state.stats[d]["point_history"].append({"race": curr_mark, "pts": st.session_state.stats[d]["points"]})
+        if err:
+            st.error(f"❌ 提交失敗：{err_msg}")
+        else:
+            # --- 核心邏輯處理 ---
+            if r_type == "正賽":
+                for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
+                t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
+                for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
+                st.session_state.race_no += 1
+            
+            curr_mark = st.session_state.race_no if r_type == "正賽" else st.session_state.race_no + 0.5
+            sorted_res = sorted(processed.items(), key=lambda x: 99 if x[1]=='DNF' else x[1])
 
-                for t in TEAM_CONFIG.keys():
-                    t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
-                    st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
-                
-                # 成功提交後，手動清理 session_state 的輸入暫存
-                for d in inputs.keys():
-                    if f"f_{d}" in st.session_state:
-                        del st.session_state[f"f_{d}"]
-                
-                st.success("✅ 錄入成功！")
-                st.rerun()
+            if r_type == "正賽":
+                pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+                for d, r in sorted_res:
+                    s = st.session_state.stats[d]
+                    p = 0
+                    if r == 'DNF':
+                        s["ranks"].append(25); s["dnf"] += 1
+                        if s["dnf"] % 5 == 0: s["penalty_next"] = True
+                    else:
+                        s["ranks"].append(r)
+                        if r==1: s["p1"]+=1
+                        elif r==2: s["p2"]+=1
+                        elif r==3: s["p3"]+=1
+                        if pts_pool and r <= 10:
+                            if s["penalty_next"]: s["penalty_next"] = False
+                            else: p = pts_pool.pop(0)
+                    s["points"] += p
+                    s["point_history"].append({"race": curr_mark, "pts": s["points"]})
+            else: # 衝刺賽
+                sprint_pts = {d: 0 for d in st.session_state.stats.keys()}
+                for d, r in sorted_res:
+                    if r != 'DNF': sprint_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
+                non_top_10 = [(d, r) for d, r in sorted_res if d not in top_10_names and r != 'DNF']
+                non_top_10.sort(key=lambda x: x[1])
+                bonus = [8, 7, 6, 5, 4, 3, 2, 1]
+                for d, r in non_top_10:
+                    if bonus: sprint_pts[d] += bonus.pop(0)
+                for d, p in sprint_pts.items():
+                    st.session_state.stats[d]["points"] += p
+                    st.session_state.stats[d]["point_history"].append({"race": curr_mark, "pts": st.session_state.stats[d]["points"]})
 
-# --- 榜單與圖表 (同前) ---
+            for t in TEAM_CONFIG.keys():
+                t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
+                st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
+            
+            # 關鍵：提交成功後，改變 form_id，徹底清空所有輸入框
+            st.session_state.form_id += 1
+            st.success("✅ 數據已成功錄入！")
+            st.rerun()
+
+# --- 顯示介面 ---
 with tab_wdc:
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -sum(x[1]['ranks'])/len(x[1]['ranks']) if x[1]['ranks'] else 0), reverse=True)
     d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf'], f"{sum(s['ranks'])/len(s['ranks']):.3f}" if s['ranks'] else "-"] for i, (n, s) in enumerate(d_sort, 1)]
