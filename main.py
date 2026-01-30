@@ -145,19 +145,77 @@ with tab_pos:
         st.info("尚無正賽數據。")
 
 # --- 榜單與圖表 (同前) ---
+# --- 榜單與圖表 ---
 with tab_wdc:
+    def get_avg_pos_with_dnf(ranks):
+        if not ranks: return "N/A"
+        # 將 'R' 轉換為 25，其餘保持原數字
+        processed_ranks = [r if isinstance(r, int) else 25 for r in ranks]
+        return round(sum(processed_ranks) / len(processed_ranks), 2)
+
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3']), reverse=True)
-    d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']] for i, (n, s) in enumerate(d_sort, 1)]
-    st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","P1/P2/P3","DNF"]), use_container_width=True, hide_index=True)
+    
+    d_data = []
+    for i, (n, s) in enumerate(d_sort, 1):
+        # 趨勢計算
+        trend = ""
+        if st.session_state.race_no >= 1 and s['prev_rank'] != 0:
+            diff = s['prev_rank'] - i
+            if diff > 0: trend = f"🔼 {diff}"
+            elif diff < 0: trend = f"🔽 {abs(diff)}"
+            else: trend = "➖"
+        
+        avg_p = get_avg_pos_with_dnf(s["ranks"])
+        
+        d_data.append([
+            trend, i, s['no'], n, s['team'], s['points'], 
+            avg_p, f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']
+        ])
+    
+    st.dataframe(
+        pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","平均名次","P1/P2/P3","DNF"]), 
+        use_container_width=True, hide_index=True
+    )
 
 with tab_wcc:
     t_list = []
     for t in TEAM_CONFIG.keys():
         ds = [s for d, s in st.session_state.stats.items() if s["team"] == t]
-        t_list.append({"team": t, "pts": sum(d["points"] for d in ds), "p1": sum(d["p1"] for d in ds), "p2": sum(d["p2"] for d in ds), "p3": sum(d["p3"] for d in ds)})
+        
+        # 收集該車隊所有車手的名次紀錄，'R' 視為 25
+        all_team_ranks = []
+        for d_stat in ds:
+            all_team_ranks.extend([r if isinstance(r, int) else 25 for r in d_stat["ranks"]])
+        
+        avg_t_pos = round(sum(all_team_ranks) / len(all_team_ranks), 2) if all_team_ranks else "N/A"
+        
+        t_list.append({
+            "team": t, 
+            "pts": sum(d["points"] for d in ds), 
+            "p1": sum(d["p1"] for d in ds), 
+            "p2": sum(d["p2"] for d in ds), 
+            "p3": sum(d["p3"] for d in ds),
+            "avg_pos": avg_t_pos
+        })
+    
     t_sort = sorted(t_list, key=lambda x: (x["pts"], x["p1"], x["p2"], x["p3"]), reverse=True)
-    t_rows = [[(f"🔼 {st.session_state.team_prev_rank[t['team']]-i}" if st.session_state.team_prev_rank[t['team']]-i>0 else f"🔽 {abs(st.session_state.team_prev_rank[t['team']]-i)}" if st.session_state.team_prev_rank[t['team']]-i<0 else "➖" if st.session_state.race_no >= 1 and st.session_state.team_prev_rank[t['team']] != 0 else ""), i, t["team"], t["pts"], f"{t['p1']}/{t['p2']}/{t['p3']}"] for i, t in enumerate(t_sort, 1)]
-    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","P1/P2/P3"]), use_container_width=True, hide_index=True)
+    
+    t_rows = []
+    for i, t in enumerate(t_sort, 1):
+        trend = ""
+        prev = st.session_state.team_prev_rank.get(t['team'], 0)
+        if st.session_state.race_no >= 1 and prev != 0:
+            diff = prev - i
+            if diff > 0: trend = f"🔼 {diff}"
+            elif diff < 0: trend = f"🔽 {abs(diff)}"
+            else: trend = "➖"
+            
+        t_rows.append([trend, i, t["team"], t["pts"], t["avg_pos"], f"{t['p1']}/{t['p2']}/{t['p3']}"])
+    
+    st.dataframe(
+        pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","平均名次","P1/P2/P3"]), 
+        use_container_width=True, hide_index=True
+    )
 
 with tab_chart:
     if st.session_state.race_no > 0:
