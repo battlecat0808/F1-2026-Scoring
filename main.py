@@ -3,168 +3,160 @@ import pandas as pd
 import json
 import plotly.express as px
 
-st.set_page_config(page_title="2026 F1 Scoring Ultimate", page_icon="🏎️", layout="wide")
-
-# --- 核心設定 ---
+# --- 1. 核心設定：車隊、顏色、與賽車等級 (Tier) ---
 TEAM_CONFIG = {
-    "McLaren": {"color": "#FF8700", "drivers": {"Lando Norris": "1", "Oscar Piastri": "81"}},
-    "Ferrari": {"color": "#E80020", "drivers": {"Lewis Hamilton": "44", "Charles Leclerc": "16"}},
-    "Red Bull": {"color": "#3671C6", "drivers": {"Max Verstappen": "3", "Isack Hadjar": "66"}},
-    "Mercedes": {"color": "#27F4D2", "drivers": {"George Russell": "63", "Kimi Antonelli": "12"}},
-    "Aston Martin": {"color": "#229971", "drivers": {"Fernando Alonso": "14", "Lance Stroll": "18"}},
-    "Audi": {"color": "#F50A20", "drivers": {"Nico Hulkenberg": "27", "Gabriel Bortoleto": "5"}},
-    "Williams": {"color": "#64C4FF", "drivers": {"Carlos Sainz": "55", "Alex Albon": "23"}},
-    "Alpine": {"color": "#0093CC", "drivers": {"Pierre Gasly": "10", "Franco Colapinto": "43"}},
-    "Racing Bulls": {"color": "#6692FF", "drivers": {"Liam Lawson": "30", "Arvid Lindblad": "17"}},
-    "Haas": {"color": "#B6BABD", "drivers": {"Esteban Ocon": "31", "Oliver Bearman": "87"}},
-    "APX-CTWR": {"color": "#000000", "drivers": {"Yuki Tsunoda": "22", "Ethan Tan": "9"}}
+    "McLaren": {"color": "#FF8700", "tier": 10, "drivers": {"Lando Norris": "1", "Oscar Piastri": "81"}},
+    "Ferrari": {"color": "#E80020", "tier": 10, "drivers": {"Lewis Hamilton": "44", "Charles Leclerc": "16"}},
+    "Red Bull": {"color": "#3671C6", "tier": 9, "drivers": {"Max Verstappen": "3", "Isack Hadjar": "66"}},
+    "Mercedes": {"color": "#27F4D2", "tier": 9, "drivers": {"George Russell": "63", "Kimi Antonelli": "12"}},
+    "Aston Martin": {"color": "#229971", "tier": 8, "drivers": {"Fernando Alonso": "14", "Lance Stroll": "18"}},
+    "Audi": {"color": "#F50A20", "tier": 8, "drivers": {"Nico Hulkenberg": "27", "Gabriel Bortoleto": "5"}},
+    "Williams": {"color": "#64C4FF", "tier": 8, "drivers": {"Carlos Sainz": "55", "Alex Albon": "23"}},
+    "Alpine": {"color": "#0093CC", "tier": 8, "drivers": {"Pierre Gasly": "10", "Franco Colapinto": "43"}},
+    "Racing Bulls": {"color": "#6692FF", "tier": 8, "drivers": {"Liam Lawson": "30", "Arvid Lindblad": "17"}},
+    "Haas": {"color": "#B6BABD", "tier": 8, "drivers": {"Esteban Ocon": "31", "Oliver Bearman": "87"}},
+    "APX-CTWR": {"color": "#000000", "tier": 8, "drivers": {"Yuki Tsunoda": "22", "Ethan Tan": "9"}}
 }
 
-# --- 初始化 ---
+# --- 2. 能力變動矩陣 (10/9/8 矩陣) ---
+# 這是你定義的：開爛車拿好名次加更多
+MATRIX = {
+    10: {1: 1.0, 2: 0.8, 3: 0.6, 4: 0.4, 5: 0.2, 6: 0, 7: -0.1, 8: -0.2, 9: -0.3, 10: -0.4, 11: -0.5, 12: -0.6, 13: -0.7, 14: -0.8, 15: -0.9, 16: -1.0, 17: -1.1, 18: -1.2, 19: -1.3, 20: -1.4, 21: -1.5, 22: -1.6},
+    9: {1: 1.5, 2: 1.2, 3: 1.0, 4: 0.8, 5: 0.6, 6: 0.4, 7: 0.2, 8: 0, 9: -0.1, 10: -0.2, 11: -0.3, 12: -0.4, 13: -0.5, 14: -0.6, 15: -0.7, 16: -0.8, 17: -0.9, 18: -1.0, 19: -1.1, 20: -1.2, 21: -1.3, 22: -1.4},
+    8: {1: 2.0, 2: 1.7, 3: 1.4, 4: 1.2, 5: 1.0, 6: 0.8, 7: 0.6, 8: 0.4, 9: 0.2, 10: 0, 11: -0.1, 12: -0.2, 13: -0.3, 14: -0.4, 15: -0.5, 16: -0.6, 17: -0.7, 18: -0.8, 19: -0.9, 20: -1.0, 21: -1.1, 22: -1.2}
+}
+
+# --- 3. 初始化系統 ---
+st.set_page_config(page_title="2026 F1 精算儀", page_icon="🏎️", layout="wide")
+
 if "stats" not in st.session_state:
-    st.session_state.stats = {d: {"no": c, "team": t, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0} 
-                             for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
-    st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
-    st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
+    st.session_state.stats = {d: {
+        "no": c, "team": t, "points": 0, "ranks": [], 
+        "point_history": [{"race": 0, "pts": 0}], 
+        "rating": 8.5, 
+        "rating_history": [{"race": 0, "val": 8.5}],
+        "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "prev_rank": 0
+    } for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
     st.session_state.race_no = 0
     st.session_state.form_id = 0
 
-# --- 側邊欄 ---
+# --- 4. 側邊欄：數據備份與手動調整 ---
 with st.sidebar:
     st.header("💾 數據管理")
-    backup_input = st.text_area("存檔代碼：", height=100)
+    backup_input = st.text_area("讀取存檔 (貼上代碼)：", height=100)
     if st.button("載入存檔"):
         try:
             data = json.loads(backup_input)
             st.session_state.update(data)
             st.success("讀取成功！"); st.rerun()
-        except: st.error("格式錯誤")
-    if st.button("🚨 重置全賽季"):
+        except: st.error("代碼格式不對喔")
+    
+    if st.button("🚨 重置全賽季數據"):
         st.session_state.clear(); st.rerun()
+    
+    st.divider()
+    st.header("⚙️ 初始底盤微調")
+    for d in sorted(st.session_state.stats.keys()):
+        st.session_state.stats[d]["rating"] = st.sidebar.number_input(f"{d} 能力分", value=st.session_state.stats[d]["rating"], step=0.1)
 
-# --- 主程式 ---
-st.title(f"🏎️ 2026 F1 賽季 (第{st.session_state.race_no+1}週)")
-tab_input, tab_wdc, tab_wcc, tab_pos, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📊 完賽位置", "📈 數據圖表"])
+# --- 5. 主介面：分頁設計 ---
+st.title(f"🏎️ 2026 F1 賽季系統 - 第 {st.session_state.race_no + 1} 場")
+tab_input, tab_wdc, tab_status, tab_pos, tab_chart = st.tabs(["🏁 成績錄入", "👤 車手積分榜", "🧪 能力精算細節", "📊 完賽歷史", "📈 趨勢圖"])
 
+# 頁面 1：錄入成績
 with tab_input:
-    r_type = st.radio("本場類型：", ["正賽", "衝刺賽"], horizontal=True)
-    wdc_order = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1'], st.session_state.stats[x]['p2'], st.session_state.stats[x]['p3']), reverse=True)
-    top_10_names = set(wdc_order[:10])
-
-    st.markdown("---")
+    st.info("請輸入本場名次 (1-22) 或退賽輸入 'R'")
     inputs = {}
     cols = st.columns(2)
     for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
         with cols[idx % 2]:
-            st.markdown(f"**{team}**")
+            st.markdown(f"**{team} (車輛: T{cfg['tier']})**")
             for driver, no in cfg["drivers"].items():
-                k = f"in_{driver}_{st.session_state.form_id}"
-                inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="1-22 / R")
-    
-    if st.button("🚀 提交成績", use_container_width=True, type="primary"):
+                inputs[driver] = st.text_input(f"#{no} {driver}", key=f"{driver}_{st.session_state.form_id}")
+
+    if st.button("🚀 提交成績並更新所有數據", use_container_width=True, type="primary"):
         processed, used_ranks, err = {}, set(), False
-        err_msg = ""
         for d, r in inputs.items():
             v = r.strip().upper()
             if v == 'R': processed[d] = 'R'
-            elif not v: err = True; err_msg = "有欄位漏填！"
+            elif not v: err = True
             else:
-                try:
-                    n = int(v)
-                    if 1 <= n <= 22 and n not in used_ranks:
-                        processed[d] = n; used_ranks.add(n)
-                    else: err = True; err_msg = f"排名 {n} 重複或超出範圍！"
-                except: err = True; err_msg = f"'{v}' 格式不對！"
+                n = int(v)
+                processed[d] = n; used_ranks.add(n)
 
-        if err: st.error(f"❌ {err_msg}")
+        if err:
+            st.error("有欄位沒填好或是名次重複了！")
         else:
-            if r_type == "正賽":
-                for i, name in enumerate(wdc_order, 1): st.session_state.stats[name]["prev_rank"] = i
-                t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
-                for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
-                st.session_state.race_no += 1
+            st.session_state.race_no += 1
+            pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
             
-            curr_mark = st.session_state.race_no if r_type == "正賽" else st.session_state.race_no + 0.5
-            sorted_res = sorted(processed.items(), key=lambda x: 99 if x[1]=='R' else x[1])
+            # 計算邏輯
+            for d, r in processed.items():
+                s = st.session_state.stats[d]
+                car_tier = TEAM_CONFIG[s['team']]['tier']
+                
+                # A. 積分更新
+                p = 0
+                if r != 'R':
+                    if r <= 10: p = pts_pool[r-1]
+                    if r==1: s["p1"]+=1
+                    elif r==2: s["p2"]+=1
+                    elif r==3: s["p3"]+=1
+                else: s["dnf"] += 1
+                
+                s["points"] += p
+                s["ranks"].append(r)
+                s["point_history"].append({"race": st.session_state.race_no, "pts": s["points"]})
 
-            if r_type == "正賽":
-                pts_pool = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
-                for d, r in sorted_res:
-                    s = st.session_state.stats[d]
-                    p = 0
-                    s["ranks"].append(r) # 直接存數字或 'R'
-                    if r == 'R':
-                        s["dnf"] += 1
-                        if s["dnf"] % 5 == 0: s["penalty_next"] = True
-                    else:
-                        if r==1: s["p1"]+=1
-                        elif r==2: s["p2"]+=1
-                        elif r==3: s["p3"]+=1
-                        if pts_pool and r <= 10:
-                            if s["penalty_next"]: s["penalty_next"] = False
-                            else: p = pts_pool.pop(0)
-                    s["points"] += p
-                    s["point_history"].append({"race": curr_mark, "pts": s["points"]})
-            else: # Sprint
-                sprint_pts = {d: 0 for d in st.session_state.stats.keys()}
-                for d, r in sorted_res:
-                    if r != 'R': sprint_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
-                non_top_10 = [(d, r) for d, r in sorted_res if d not in top_10_names and r != 'R']
-                non_top_10.sort(key=lambda x: x[1])
-                bonus = [8, 7, 6, 5, 4, 3, 2, 1]
-                for d, r in non_top_10:
-                    if bonus: sprint_pts[d] += bonus.pop(0)
-                for d, p in sprint_pts.items():
-                    st.session_state.stats[d]["points"] += p
-                    st.session_state.stats[d]["point_history"].append({"race": curr_mark, "pts": st.session_state.stats[d]["points"]})
+                # B. 能力變動計算 (SP + H2H)
+                if r != 'R':
+                    sp = MATRIX[car_tier].get(r, -1.0)
+                    # 找隊友名次
+                    teammate = [n for n in TEAM_CONFIG[s['team']]['drivers'].keys() if n != d][0]
+                    t_rank = processed[teammate]
+                    
+                    # 贏隊友紅利：每 3 名 +0.1
+                    h2h_bonus = 0
+                    effective_t_rank = 23 if t_rank == 'R' else t_rank
+                    if effective_t_rank > r:
+                        h2h_bonus = ((effective_t_rank - r) // 3) * 0.1
+                    elif r > effective_t_rank:
+                        h2h_bonus = ((effective_t_rank - r) // 3 + 1) * 0.1 # 輸隊友扣分
+                        
+                    s["rating"] += (sp + h2h_bonus)
+                
+                # 限制最高 10 分，最低 7 分
+                s["rating"] = max(min(s["rating"], 10.4), 6.5)
+                s["rating_history"].append({"race": st.session_state.race_no, "val": s["rating"]})
 
-            for t in TEAM_CONFIG.keys():
-                t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
-                st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
-            
             st.session_state.form_id += 1
             st.rerun()
 
-# --- 新增：完賽位置表 ---
-with tab_pos:
-    if st.session_state.race_no > 0:
-        st.subheader("🏁 每場完賽名次記錄")
-        pos_data = []
-        # 按目前總積分排序顯示車手
-        sorted_drivers = sorted(st.session_state.stats.keys(), key=lambda x: st.session_state.stats[x]['points'], reverse=True)
-        for d in sorted_drivers:
-            s = st.session_state.stats[d]
-            row = {"車手": d, "車隊": s['team']}
-            for i, r in enumerate(s["ranks"], 1):
-                row[f"Rd.{i}"] = r
-            pos_data.append(row)
-        
-        df_pos = pd.DataFrame(pos_data)
-        st.dataframe(df_pos, use_container_width=True, hide_index=True)
-    else:
-        st.info("尚無正賽數據。")
-
-# --- 榜單與圖表 (同前) ---
+# 頁面 2：積分榜
 with tab_wdc:
-    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3']), reverse=True)
-    d_data = [[(f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i>0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i<0 else "➖" if st.session_state.race_no >= 1 and s['prev_rank'] != 0 else ""), i, s['no'], n, s['team'], s['points'], f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']] for i, (n, s) in enumerate(d_sort, 1)]
-    st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","P1/P2/P3","DNF"]), use_container_width=True, hide_index=True)
+    d_sort = sorted(st.session_state.stats.items(), key=lambda x: x[1]['points'], reverse=True)
+    d_data = [[i+1, n, s['team'], s['points'], f"{s['rating']:.2f}", round(s['rating']), s['p1'], s['dnf']] for i, (n, s) in enumerate(d_sort)]
+    st.dataframe(pd.DataFrame(d_data, columns=["排名", "車手", "車隊", "總積分", "精算分", "下場遊戲等級", "冠軍次數", "DNF"]), use_container_width=True, hide_index=True)
 
-with tab_wcc:
-    t_list = []
-    for t in TEAM_CONFIG.keys():
-        ds = [s for d, s in st.session_state.stats.items() if s["team"] == t]
-        t_list.append({"team": t, "pts": sum(d["points"] for d in ds), "p1": sum(d["p1"] for d in ds), "p2": sum(d["p2"] for d in ds), "p3": sum(d["p3"] for d in ds)})
-    t_sort = sorted(t_list, key=lambda x: (x["pts"], x["p1"], x["p2"], x["p3"]), reverse=True)
-    t_rows = [[(f"🔼 {st.session_state.team_prev_rank[t['team']]-i}" if st.session_state.team_prev_rank[t['team']]-i>0 else f"🔽 {abs(st.session_state.team_prev_rank[t['team']]-i)}" if st.session_state.team_prev_rank[t['team']]-i<0 else "➖" if st.session_state.race_no >= 1 and st.session_state.team_prev_rank[t['team']] != 0 else ""), i, t["team"], t["pts"], f"{t['p1']}/{t['p2']}/{t['p3']}"] for i, t in enumerate(t_sort, 1)]
-    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","P1/P2/P3"]), use_container_width=True, hide_index=True)
+# 頁面 3：能力細節
+with tab_status:
+    st.subheader("🧪 車手狀態精算表")
+    status_df = pd.DataFrame([{"車手": d, "目前精算分": f"{s['rating']:.2f}", "遊戲等級設定": round(s['rating']), "最後變動": f"{s['rating'] - s['rating_history'][-2]['val']:+.2f}" if len(s['rating_history'])>1 else "0.00"} for d, s in st.session_state.stats.items()])
+    st.table(status_df.sort_values("目前精算分", ascending=False))
 
+# 頁面 4：完賽表
+with tab_pos:
+    st.subheader("📅 歷史完賽名次")
+    pos_data = [{"車手": d, **{f"Rd.{i+1}": r for i, r in enumerate(s["ranks"])}} for d, s in st.session_state.stats.items()]
+    st.dataframe(pd.DataFrame(pos_data), use_container_width=True)
+
+# 頁面 5：趨勢圖
 with tab_chart:
-    if st.session_state.race_no > 0:
-        dh = [{"Race": pt["race"], "Driver": f"#{s['no']} {d}", "Points": pt["pts"]} for d, s in st.session_state.stats.items() for pt in s['point_history']]
-        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, color_discrete_map={f"#{s['no']} {d}": TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, template="plotly_dark", title="車手積分趨勢"), use_container_width=True)
-        th = [{"Race": pt["race"], "Team": t, "Points": pt["pts"]} for t, h in st.session_state.team_history.items() for pt in h]
-        st.plotly_chart(px.line(pd.DataFrame(th), x="Race", y="Points", color="Team", markers=True, color_discrete_map={t: cfg["color"] for t, cfg in TEAM_CONFIG.items()}, template="plotly_dark", title="車隊積分趨勢"), use_container_width=True)
+    rh = [{"場次": pt["race"], "車手": d, "實力分數": pt["val"]} for d, s in st.session_state.stats.items() for pt in s['rating_history'] if pt["race"] > 0]
+    if rh:
+        st.plotly_chart(px.line(pd.DataFrame(rh), x="場次", y="實力分數", color="車手", title="車手動態評級走勢"), use_container_width=True)
 
+# --- 頁尾：備份代碼 ---
 st.divider()
-st.code(json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no, "team_history": st.session_state.team_history, "team_prev_rank": st.session_state.team_prev_rank}))
+st.subheader("💾 本地備份代碼 (請複製並保存到記事本)")
+st.code(json.dumps({"stats": st.session_state.stats, "race_no": st.session_state.race_no, "form_id": st.session_state.form_id}))
