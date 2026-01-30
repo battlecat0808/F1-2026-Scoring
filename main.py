@@ -87,7 +87,7 @@ tabs = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "�
 with tabs[0]:
     r_type = st.radio("類型：", ["正賽", "衝刺賽"], horizontal=True)
     inputs = {}
-    cols = st.columns(3)
+    cols = st.columns(2)
     for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
         with cols[idx % 2]:
             st.markdown(f"**{team}** ({st.session_state.team_lv[team]})")
