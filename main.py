@@ -38,8 +38,8 @@ if "stats" not in st.session_state:
         d: {
             "no": c, "team": t, "points": 0, "ranks": [], 
             "point_history": [{"race": 0, "pts": 0}], 
-            "rating": 80.0, # 預設值，之後會被輸入覆蓋
-            "rating_history": [{"race": 0, "val": 80.0}],
+            "rating": 10, # 預設值，之後會被輸入覆蓋
+            "rating_history": [{"race": 0, "val": 10}],
             "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "prev_rank": 0, "penalty_next": False
         } for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()
     }
@@ -58,7 +58,7 @@ with st.sidebar:
         st.info("賽季開始後仍可微調，但建議在第一場前設定完畢。")
         for d in st.session_state.stats.keys():
             new_val = st.number_input(f"{d} (# {st.session_state.stats[d]['no']})", 
-                                      0.0, 100.0, st.session_state.stats[d]["rating"], step=0.5)
+                                      0.0, 100.0, st.session_state.stats[d]["rating"], step=0.01)
             # 更新目前評分，若還沒跑過比賽，同步更新歷史起點
             st.session_state.stats[d]["rating"] = new_val
             if st.session_state.race_no == 0:
