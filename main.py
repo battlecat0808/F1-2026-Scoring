@@ -128,7 +128,7 @@ with tab_input:
 # --- 完賽位置表 (字體顏色標註版) ---
 with tab_pos:
     if st.session_state.race_no > 0:
-        st.subheader("🏁 每場完賽名次記錄 (R 記為 25)")
+        st.subheader("🏁 每場完賽名次記錄")
         
         # 準備數據
         pos_data = []
