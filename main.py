@@ -125,22 +125,41 @@ with tab_input:
             st.session_state.form_id += 1
             st.rerun()
 
-# --- 新增：完賽位置表 ---
+# --- 完賽位置表 (含顏色標註) ---
 with tab_pos:
     if st.session_state.race_no > 0:
-        st.subheader("🏁 每場完賽名次記錄")
+        st.subheader("🏁 每場完賽名次記錄 (R 記為 25)")
+        
+        # 準備數據
         pos_data = []
-        # 按目前總積分排序顯示車手
         sorted_drivers = sorted(st.session_state.stats.keys(), key=lambda x: st.session_state.stats[x]['points'], reverse=True)
         for d in sorted_drivers:
             s = st.session_state.stats[d]
+            # 將 'R' 轉換為 25 進行顯示
             row = {"車手": d, "車隊": s['team']}
             for i, r in enumerate(s["ranks"], 1):
-                row[f"Rd.{i}"] = r
+                row[f"Rd.{i}"] = 25 if r == 'R' else r
             pos_data.append(row)
         
         df_pos = pd.DataFrame(pos_data)
-        st.dataframe(df_pos, use_container_width=True, hide_index=True)
+
+        # 定義樣式函數
+        def style_ranks(val):
+            if isinstance(val, (int, float)):
+                if val == 25: return 'background-color: #FF4B4B; color: white; font-weight: bold' # 紅色 (DNF)
+                if val == 1: return 'background-color: #FFD700; color: black; font-weight: bold'  # 金色
+                if val == 2: return 'background-color: #C0C0C0; color: black; font-weight: bold'  # 銀色
+                if val == 3: return 'background-color: #CD7F32; color: white; font-weight: bold'  # 銅色
+                if 4 <= val <= 10: return 'background-color: #28a745; color: white'             # 綠色
+                if 11 <= val <= 24: return 'background-color: #ffc107; color: black'            # 黃色
+            return ''
+
+        # 套用樣式並顯示
+        # 我們排除 "車手" 與 "車隊" 欄位，只對 Rd. 欄位進行染色
+        rd_cols = [c for c in df_pos.columns if c.startswith("Rd.")]
+        styled_df = df_pos.style.applymap(style_ranks, subset=rd_cols)
+        
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
     else:
         st.info("尚無正賽數據。")
 
