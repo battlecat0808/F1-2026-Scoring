@@ -21,139 +21,188 @@ TEAM_CONFIG = {
 }
 
 def init_driver_stats(name, no, team):
-    return {"no": no, "team": team, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], 
-            "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "prev_rank": 0}
+    return {
+        "no": no, "team": team, "points": 0, "ranks": [], 
+        "point_history": [{"race": 0, "pts": 0}], 
+        "p1": 0, "p2": 0, "p3": 0, "dnf": 0, 
+        "penalty_next": False, "prev_rank": 0
+    }
 
-# --- 2. 初始化與載入邏輯 ---
 if "stats" not in st.session_state:
     st.session_state.stats = {d: init_driver_stats(d, c, t) for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
+    st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
+    st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
-    st.session_state.sprint_history = []
+    st.session_state.form_id = 0
+    st.session_state.sprints_data = [] # 新增：存放歷史衝刺賽結果
 
+# --- 3. 側邊欄與壓縮載入邏輯 (升級版) ---
 with st.sidebar:
     st.header("💾 數據管理")
-    backup_input = st.text_area("貼入壓縮存檔代碼：", height=150)
-    if st.button("載入並重建賽季"):
+    backup_input = st.text_area("貼入壓縮存檔代碼：", height=100)
+    
+    if st.button("載入存檔"):
         try:
             raw = json.loads(backup_input)
             st.session_state.race_no = raw["race_no"]
-            st.session_state.sprint_history = raw.get("sprints", [])
-            new_stats = {d: init_driver_stats(d, c, t) for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
+            st.session_state.form_id = raw.get("form_id", 0)
+            st.session_state.sprints_data = raw.get("sprints", []) # 載入衝刺賽數據
             
+            new_stats = {d: init_driver_stats(d, c, t) for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
             pts_map = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
+            
             for d, r_list in raw["data"].items():
                 s = new_stats[d]
                 s["ranks"] = r_list
                 curr_pts = 0
                 for i, r in enumerate(r_list, 1):
-                    # 加入該場次前的衝刺賽積分
-                    for sp in st.session_state.sprint_history:
+                    # 檢查這場正賽前是否有衝刺賽
+                    for sp in st.session_state.sprints_data:
                         if sp["race_after"] == (i - 0.5):
                             curr_pts += sp["results"].get(d, 0)
                     
-                    # 計算正賽積分
-                    if r == 'R' or r == 25: s["dnf"] += 1
+                    if r == 'R': s["dnf"] += 1
                     else:
                         if r == 1: s["p1"] += 1
                         elif r == 2: s["p2"] += 1
                         elif r == 3: s["p3"] += 1
                         curr_pts += pts_map.get(r, 0)
+                    s["points"] = curr_pts
                     s["point_history"].append({"race": i, "pts": curr_pts})
                 
-                # 最後檢查是否有發生在最後一場正賽後的衝刺賽
-                for sp in st.session_state.sprint_history:
+                # 處理最後一場之後的衝刺賽
+                for sp in st.session_state.sprints_data:
                     if sp["race_after"] > len(r_list):
-                        curr_pts += sp["results"].get(d, 0)
-                
-                s["points"] = curr_pts
+                        s["points"] += sp["results"].get(d, 0)
+                        
             st.session_state.stats = new_stats
-            st.success("數據已完美還原！")
-            st.rerun()
+            st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
+            for i in range(1, st.session_state.race_no + 1):
+                for t in TEAM_CONFIG.keys():
+                    t_pts = sum(s["point_history"][i]["pts"] for d, s in st.session_state.stats.items() if s["team"] == t)
+                    st.session_state.team_history[t].append({"race": i, "pts": t_pts})
+            st.success("成功解壓縮並重建賽季 (含衝刺賽)！"); st.rerun()
         except Exception as e:
             st.error(f"解析失敗: {e}")
 
-# --- 3. UI 標籤頁 ---
-tabs = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📊 趨勢與完賽"])
+    if st.button("🚨 重置全賽季"):
+        st.session_state.clear(); st.rerun()
 
-with tabs[0]:
-    st.subheader(f"第 {st.session_state.race_no + 1} 場比賽紀錄")
-    mode = st.radio("比賽類型：", ["正賽", "衝刺賽"], horizontal=True)
+# --- 4. 主介面邏輯 (維持原狀但修正提交) ---
+st.title(f"🏎️ 2026 F1 賽季 (第 {st.session_state.race_no+1} 週)")
+tabs = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📊 完賽位置", "📈 數據圖表"])
+
+with tabs[0]: 
+    r_type = st.radio("本場類型：", ["正賽", "衝刺賽"], horizontal=True)
+    wdc_order = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1']), reverse=True)
     
     inputs = {}
     cols = st.columns(2)
-    drivers_list = list(st.session_state.stats.keys())
-    for idx, d in enumerate(drivers_list):
+    for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
         with cols[idx % 2]:
-            inputs[d] = st.text_input(f"{st.session_state.stats[d]['no']} {d} ({st.session_state.stats[d]['team']})", key=f"in_{d}")
+            st.markdown(f"**{team}**")
+            for driver, no in cfg["drivers"].items():
+                inputs[driver] = st.text_input(f"#{no} {driver}", key=f"in_{driver}_{st.session_state.form_id}", placeholder="1-22 / R")
 
-    if st.button("提交成績", use_container_width=True):
-        if mode == "正賽":
-            st.session_state.race_no += 1
-            pts_map = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
-            for d, val in inputs.items():
-                rank = 'R' if val.upper() == 'R' else int(val)
-                st.session_state.stats[d]["ranks"].append(rank)
-                p = pts_map.get(rank, 0) if isinstance(rank, int) else 0
-                st.session_state.stats[d]["points"] += p
-                st.session_state.stats[d]["point_history"].append({"race": st.session_state.race_no, "pts": st.session_state.stats[d]["points"]})
+    if st.button("🚀 提交成績", use_container_width=True, type="primary"):
+        processed, used_ranks, err = {}, set(), False
+        for d, r in inputs.items():
+            v = r.strip().upper()
+            if v == 'R': processed[d] = 'R'
+            elif v.isdigit() and 1 <= int(v) <= 22 and int(v) not in used_ranks:
+                processed[d] = int(v); used_ranks.add(int(v))
+            else: err = True
+        
+        if err or len(processed) < 22:
+            st.error("❌ 輸入無效")
         else:
-            # 衝刺賽 8-7-6-5-4-3-2-1
-            s_res = {}
-            sorted_s = sorted([(d, v) for d, v in inputs.items() if v.isdigit()], key=lambda x: int(x[1]))
-            s_pts = [8, 7, 6, 5, 4, 3, 2, 1]
-            for i, (d, r) in enumerate(sorted_s):
-                p = s_pts[i] if i < 8 else 0
-                st.session_state.stats[d]["points"] += p
-                s_res[d] = p
-            st.session_state.sprint_history.append({"race_after": st.session_state.race_no + 0.5, "results": s_res})
-        st.rerun()
+            curr_m = st.session_state.race_no + 1 if r_type == "正賽" else st.session_state.race_no + 0.5
+            
+            if r_type == "正賽":
+                st.session_state.race_no += 1
+                pts_pool = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
+                for d, r in processed.items():
+                    s = st.session_state.stats[d]
+                    s["ranks"].append(r)
+                    p = pts_pool.get(r, 0) if isinstance(r, int) else 0
+                    if r == 1: s["p1"]+=1
+                    elif r == 2: s["p2"]+=1
+                    elif r == 3: s["p3"]+=1
+                    elif r == 'R': s["dnf"]+=1
+                    s["points"] += p
+                    s["point_history"].append({"race": st.session_state.race_no, "pts": s["points"]})
+            else:
+                # 衝刺賽計分
+                s_res = {}
+                sorted_s = sorted(processed.items(), key=lambda x: 99 if x[1]=='R' else x[1])
+                s_pts = [8, 7, 6, 5, 4, 3, 2, 1]
+                for d, r in sorted_s:
+                    p = s_pts.pop(0) if isinstance(r, int) and len(s_pts) > 0 else 0
+                    st.session_state.stats[d]["points"] += p
+                    s_res[d] = p
+                st.session_state.sprints_data.append({"race_after": curr_m, "results": s_res})
 
-# --- 4. 車手與車隊榜 ---
-with tabs[1]:
-    df_d = pd.DataFrame([{"車手": d, "積分": s["points"], "P1": s["p1"], "DNF": s["dnf"], "車隊": s["team"]} for d, s in st.session_state.stats.items()])
-    st.table(df_d.sort_values("積分", ascending=False).reset_index(drop=True))
+            # 更新團隊歷史
+            for t in TEAM_CONFIG.keys():
+                t_pts = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
+                st.session_state.team_history[t].append({"race": curr_m, "pts": t_pts})
+            
+            st.session_state.form_id += 1
+            st.rerun()
 
-with tabs[2]:
-    team_pts = {}
-    for d, s in st.session_state.stats.items():
-        team_pts[s["team"]] = team_pts.get(s["team"], 0) + s["points"]
-    df_t = pd.DataFrame([{"車隊": t, "積分": p} for t, p in team_pts.items()])
-    st.table(df_t.sort_values("積分", ascending=False).reset_index(drop=True))
+# --- 5. 榜單顯示 (維持原邏輯) ---
+def get_avg(ranks):
+    if not ranks: return "N/A"
+    return round(sum([r if isinstance(r, int) else 25 for r in ranks]) / len(ranks), 2)
 
-# --- 5. 趨勢與完賽矩陣 ---
-with tabs[3]:
-    # 積分趨勢圖
-    hist_data = []
-    for d, s in st.session_state.stats.items():
-        for h in s["point_history"]:
-            hist_data.append({"Race": h["race"], "Points": h["pts"], "Driver": d, "Team": s["team"]})
-    if hist_data:
-        fig = px.line(pd.DataFrame(hist_data), x="Race", y="Points", color="Driver", title="賽季積分走勢")
-        st.plotly_chart(fig, use_container_width=True)
+with tabs[1]: # 車手榜
+    d_list = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1']), reverse=True)
+    d_data = []
+    for i, (n, s) in enumerate(d_list, 1):
+        trend = f"🔼 {s['prev_rank']-i}" if s['prev_rank']-i > 0 else f"🔽 {abs(s['prev_rank']-i)}" if s['prev_rank']-i < 0 else "➖"
+        d_data.append([trend if st.session_state.race_no > 0 else "", i, s['no'], n, s['team'], s['points'], get_avg(s['ranks']), f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']])
+    st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","平均名次","P1/P2/P3","DNF"]), use_container_width=True, hide_index=True)
 
-    # 完賽矩陣 (染色邏輯)
-    st.subheader("每場完賽名次")
-    matrix = []
-    for d, s in st.session_state.stats.items():
-        matrix.append([d] + s["ranks"])
-    max_races = max([len(s["ranks"]) for s in st.session_state.stats.values()]) if st.session_state.stats else 0
-    df_m = pd.DataFrame(matrix, columns=["Driver"] + [f"R{i+1}" for i in range(max_races)])
-    
-    def color_rank(val):
-        if val == 1: return 'background-color: #FFD700; color: black'
-        if val == 2: return 'background-color: #C0C0C0; color: black'
-        if val == 3: return 'background-color: #CD7F32; color: black'
-        if val == 'R' or val == 25: return 'background-color: #333; color: white'
-        if isinstance(val, int) and val <= 10: return 'background-color: #E1FFD7; color: black'
-        return ''
-    st.dataframe(df_m.style.applymap(color_rank))
+with tabs[2]: # 車隊榜
+    t_list = []
+    for t in TEAM_CONFIG.keys():
+        ds = [s for d, s in st.session_state.stats.items() if s["team"] == t]
+        all_ranks = []
+        for d_s in ds: all_ranks.extend([r if isinstance(r, int) else 25 for r in d_s['ranks']])
+        t_list.append({"name": t, "pts": sum(d["points"] for d in ds), "p1": sum(d["p1"] for d in ds), "avg": round(sum(all_ranks)/len(all_ranks), 2) if all_ranks else "N/A"})
+    t_sort = sorted(t_list, key=lambda x: x["pts"], reverse=True)
+    t_rows = [[i, t['name'], t['pts'], t['avg'], t['p1']] for i, t in enumerate(t_sort, 1)]
+    st.dataframe(pd.DataFrame(t_rows, columns=["排名","車隊","總積分","平均名次","P1次數"]), use_container_width=True, hide_index=True)
 
-# --- 6. 底部導出 ---
-st.divider()
-st.subheader("📦 當前賽季壓縮代碼")
+with tabs[3]: # 完賽位置表 (維持字體染色)
+    if st.session_state.race_no > 0:
+        pos_df = pd.DataFrame([{"車手": d, "車隊": s['team'], **{f"Rd.{i+1}": (25 if r=='R' else r) for i, r in enumerate(s['ranks'])}} 
+                               for d, s in sorted(st.session_state.stats.items(), key=lambda x: x[1]['points'], reverse=True)])
+        def style_text(val):
+            if not isinstance(val, int): return ''
+            if val == 25: return 'color: #FF4B4B; font-weight: bold'
+            if val == 1: return 'color: #D4AF37; font-weight: bold'
+            if val == 2: return 'color: #808080; font-weight: bold'
+            if val == 3: return 'color: #CD7F32; font-weight: bold'
+            if 4 <= val <= 10: return 'color: #28a745; font-weight: bold'
+            return 'color: #E5B800'
+        rd_cols = [c for c in pos_df.columns if c.startswith("Rd.")]
+        st.dataframe(pos_df.style.applymap(style_text, subset=rd_cols), use_container_width=True, hide_index=True)
+
+with tabs[4]: # 圖表 (改用 point_history)
+    if st.session_state.race_no > 0:
+        dh = [{"Race": pt["race"], "Driver": d, "Points": pt["pts"]} for d, s in st.session_state.stats.items() for pt in s['point_history']]
+        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, 
+                                color_discrete_map={d: TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, 
+                                template="plotly_dark", title="積分趨勢"), use_container_width=True)
+
+# --- 6. 壓縮存檔輸出 (加入 sprints 數據) ---
 compact_json = json.dumps({
     "race_no": st.session_state.race_no,
-    "sprints": st.session_state.sprint_history,
+    "form_id": st.session_state.form_id,
+    "sprints": st.session_state.sprints_data, # 關鍵：存入衝刺賽
     "data": {d: s["ranks"] for d, s in st.session_state.stats.items()}
 })
+st.divider()
+st.subheader("📦 壓縮存檔代碼")
 st.code(compact_json)
