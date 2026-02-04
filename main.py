@@ -2,10 +2,12 @@ import streamlit as st
 import pandas as pd
 import json
 import plotly.express as px
+import zlib
+import base64
 
 st.set_page_config(page_title="2026 F1 Scoring Ultimate", page_icon="🏎️", layout="wide")
 
-# --- 核心設定 ---
+# --- 核心設定 (維持不變) ---
 TEAM_CONFIG = {
     "McLaren": {"color": "#FF8700", "drivers": {"Lando Norris": "1", "Oscar Piastri": "81"}},
     "Ferrari": {"color": "#E80020", "drivers": {"Lewis Hamilton": "44", "Charles Leclerc": "16"}},
@@ -20,28 +22,112 @@ TEAM_CONFIG = {
     "APX-CTWR": {"color": "#000000", "drivers": {"Yuki Tsunoda": "22", "Ethan Tan": "9"}}
 }
 
-# --- 初始化 ---
+# --- 初始化函數 ---
+def init_driver_stats(name, no, team):
+    return {"no": no, "team": team, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0}
+
 if "stats" not in st.session_state:
-    st.session_state.stats = {d: {"no": c, "team": t, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0} 
-                             for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
+    st.session_state.stats = {d: init_driver_stats(d, c, t) for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
     st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
     st.session_state.team_prev_rank = {t: 0 for t in TEAM_CONFIG.keys()}
     st.session_state.race_no = 0
     st.session_state.form_id = 0
+    st.session_state.sprints_raw = [] # 儲存衝刺賽原始得分以便壓縮
 
-# --- 側邊欄 ---
+# --- 1. 第一組：壓縮邏輯 (Compression) ---
+def export_compressed_data():
+    # 僅提取必要的核心數據：正賽名次與衝刺賽歷史
+    core_data = {
+        "r": st.session_state.race_no,
+        "s": st.session_state.sprints_raw,
+        "d": {d: s["ranks"] for d, s in st.session_state.stats.items()}
+    }
+    json_str = json.dumps(core_data)
+    # 使用 zlib 壓縮並轉為 base64 字符串
+    compressed = base64.b64encode(zlib.compress(json_str.encode())).decode()
+    return compressed
+
+# --- 2. 第二組：解壓縮與重建邏輯 (Decompression & Rebuild) ---
+def import_compressed_data(code):
+    try:
+        # 解碼與解壓縮
+        decoded = zlib.decompress(base64.b64decode(code)).decode()
+        raw = json.loads(decoded)
+        
+        # A. 重置所有狀態
+        st.session_state.stats = {d: init_driver_stats(d, c, t) for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
+        st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
+        st.session_state.race_no = raw["r"]
+        st.session_state.sprints_raw = raw.get("s", [])
+        
+        # B. 重新模擬賽季計算積分
+        pts_map = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+        
+        # 1. 處理衝刺賽積分 (假設在對應正賽週之前)
+        for sprint in st.session_state.sprints_raw:
+            for d, p in sprint["results"].items():
+                st.session_state.stats[d]["points"] += p
+                st.session_state.stats[d]["point_history"].append({"race": sprint["race"], "pts": st.session_state.stats[d]["points"]})
+
+        # 2. 處理正賽積分
+        for d, ranks in raw["d"].items():
+            s = st.session_state.stats[d]
+            s["ranks"] = ranks
+            curr_pts = s["points"] # 加上衝刺賽後的基數
+            
+            for i, r in enumerate(ranks, 1):
+                p = 0
+                if r == 'R':
+                    s["dnf"] += 1
+                else:
+                    if r == 1: s["p1"] += 1
+                    elif r == 2: s["p2"] += 1
+                    elif r == 3: s["p3"] += 1
+                    if r <= 10: p = pts_map[r-1]
+                
+                curr_pts += p
+                s["point_history"].append({"race": i, "pts": curr_pts})
+            s["points"] = curr_pts
+
+        # C. 重建車隊歷史
+        for t in TEAM_CONFIG.keys():
+            # 簡化重建，僅取最後結果
+            t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
+            st.session_state.team_history[t].append({"race": st.session_state.race_no, "pts": t_sum})
+            
+        return True
+    except Exception as e:
+        return False
+
+# --- 側邊欄 UI ---
 with st.sidebar:
     st.header("💾 數據管理")
-    backup_input = st.text_area("存檔代碼：", height=100)
-    if st.button("載入存檔"):
-        try:
-            data = json.loads(backup_input)
-            st.session_state.update(data)
-            st.success("讀取成功！"); st.rerun()
-        except: st.error("格式錯誤")
+    
+    # 壓縮功能區
+    st.subheader("壓縮輸出")
+    if st.button("生成壓縮代碼"):
+        st.session_state.current_code = export_compressed_data()
+    
+    if "current_code" in st.session_state:
+        st.text_area("複製此代碼：", st.session_state.current_code, height=70)
+
+    st.divider()
+    
+    # 解壓縮功能區
+    st.subheader("解壓縮還原")
+    input_code = st.text_area("貼入壓縮代碼：", height=70)
+    if st.button("立即還原賽季"):
+        if import_compressed_data(input_code):
+            st.success("賽季重建完成！")
+            st.rerun()
+        else:
+            st.error("代碼無效或損壞")
+
     if st.button("🚨 重置全賽季"):
         st.session_state.clear(); st.rerun()
 
+# --- [其餘主程式碼：Tab 成績輸入, 車手榜... 維持你的原有邏輯] ---
+# 注意：在提交衝刺賽成績時，記得更新 st.session_state.sprints_raw
 # --- 主程式 ---
 st.title(f"🏎️ 2026 F1 賽季 (第{st.session_state.race_no+1}週)")
 tab_input, tab_wdc, tab_wcc, tab_pos, tab_chart = st.tabs(["🏁 成績輸入", "👤 車手榜", "🏎️ 車隊榜", "📊 完賽位置", "📈 數據圖表"])
