@@ -118,62 +118,62 @@ with tab_input:
 
         if err: st.error(f"❌ {err_msg}")
         else:
-            # 1. 決定標記點 (正賽整數，衝刺賽 .5)
+            # 1. 紀錄目前排名（計算趨勢用）
+            wdc_now = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1'], st.session_state.stats[x]['p2'], st.session_state.stats[x]['p3']), reverse=True)
+            for i, name in enumerate(wdc_now, 1): st.session_state.stats[name]["prev_rank"] = i
+            
+            t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
+            for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
+
+            # 2. 正賽邏輯
             if r_type == "正賽":
-                # 紀錄賽前排名 (為了趨勢圖)
-                wdc_now = sorted(st.session_state.stats.keys(), key=lambda x: (st.session_state.stats[x]['points'], st.session_state.stats[x]['p1'], st.session_state.stats[x]['p2'], st.session_state.stats[x]['p3']), reverse=True)
-                for i, name in enumerate(wdc_now, 1): st.session_state.stats[name]["prev_rank"] = i
-                
-                t_now = sorted(TEAM_CONFIG.keys(), key=lambda x: sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == x), reverse=True)
-                for i, t_name in enumerate(t_now, 1): st.session_state.team_prev_rank[t_name] = i
-                
                 st.session_state.race_no += 1
                 curr_mark = float(st.session_state.race_no)
-            else:
-                curr_mark = st.session_state.race_no + 0.5
-
-            # 2. 分支處理：正賽積分
-            if r_type == "正賽":
                 pts_pool = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
+                
                 for d, r in processed.items():
                     s = st.session_state.stats[d]
+                    s["ranks"].append(r) # 只有正賽會紀錄名次序列
                     p = 0
-                    s["ranks"].append(r)
                     if r == 'R':
                         s["dnf"] += 1
                         if s["dnf"] % 5 == 0: s["penalty_next"] = True
                     else:
-                        if r==1: s["p1"]+=1
-                        elif r==2: s["p2"]+=1
-                        elif r==3: s["p3"]+=1
+                        if r == 1: s["p1"] += 1
+                        elif r == 2: s["p2"] += 1
+                        elif r == 3: s["p3"] += 1
                         
-                        base_p = pts_pool.get(r, 0)
-                        if s["penalty_next"]: 
-                            s["penalty_next"] = False # 罰退點數不給
-                        else: 
-                            p = base_p
+                        if not s["penalty_next"]:
+                            p = pts_pool.get(r, 0)
+                        else:
+                            s["penalty_next"] = False # 消耗掉罰退
+                    
                     s["points"] += p
                     s["point_history"].append({"race": curr_mark, "pts": s["points"]})
-            
-            # 3. 分支處理：衝刺賽積分
+
+            # 3. 衝刺賽邏輯
             else:
+                curr_mark = st.session_state.race_no + 0.5
                 sprint_res_pts = {d: 0 for d in st.session_state.stats.keys()}
-                # 前三名 5-3-1
-                for d, r in processed.items():
-                    if r != 'R': sprint_res_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
                 
-                # 非 Top 10 車手 Bonus 8-1
+                # A. 基礎前三名積分
+                for d, r in processed.items():
+                    if r != 'R':
+                        sprint_res_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
+                
+                # B. 非前10車手 Bonus (依名次發放 8,7,6...)
                 non_top_10 = [(d, r) for d, r in processed.items() if d not in top_10_names and r != 'R']
                 non_top_10.sort(key=lambda x: x[1])
-                bonus = [8, 7, 6, 5, 4, 3, 2, 1]
+                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]
                 for d, r in non_top_10:
-                    if bonus: sprint_res_pts[d] += bonus.pop(0)
+                    if bonus_pts:
+                        sprint_res_pts[d] += bonus_pts.pop(0)
                 
-                # 紀錄到衝刺賽歷史 (存檔用)
-                if "sprint_history" not in st.session_state: st.session_state.sprint_history = []
+                # C. 更新狀態與歷史
+                if "sprint_history" not in st.session_state:
+                    st.session_state.sprint_history = []
                 st.session_state.sprint_history.append({"race_after": curr_mark, "results": sprint_res_pts})
-
-                # 更新個人數據
+                
                 for d, p in sprint_res_pts.items():
                     st.session_state.stats[d]["points"] += p
                     st.session_state.stats[d]["point_history"].append({"race": curr_mark, "pts": st.session_state.stats[d]["points"]})
@@ -182,9 +182,9 @@ with tab_input:
             for t in TEAM_CONFIG.keys():
                 t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
                 st.session_state.team_history[t].append({"race": curr_mark, "pts": t_sum})
-            
+
             st.session_state.form_id += 1
-            st.success(f"{r_type} 成績已提交！")
+            st.success(f"{r_type} 成績提交成功！")
             st.rerun()
 # --- 5. 榜單顯示 ---
 with tab_wdc:
