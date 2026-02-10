@@ -34,7 +34,8 @@ with st.sidebar:
     st.header("💾 數據管理")
     backup_input = st.text_area("貼入精簡存檔代碼：", height=100)
     
-   if st.button("載入並重建賽季"):
+    # 確保這裡的 if 剛好縮排 4 個空格
+    if st.button("載入並重建賽季"):
         try:
             raw = json.loads(backup_input)
             # 1. 重置基礎狀態
@@ -50,13 +51,13 @@ with st.sidebar:
             pts_map = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
             
             for i in range(1, st.session_state.race_no + 1):
-                # --- A. 處理該場之前的衝刺賽 ---
+                # A. 處理該場之前的衝刺賽
                 for sp in st.session_state.sprint_history:
                     if sp["race_after"] == (i - 0.5):
                         for d, p in sp["results"].items():
                             if d in new_stats: new_stats[d]["points"] += p
                 
-                # --- B. 處理正賽積分與統計 ---
+                # B. 處理正賽積分與統計
                 for d, r_list in raw["data"].items():
                     if d in new_stats and len(r_list) >= i:
                         r = r_list[i-1]
@@ -71,14 +72,15 @@ with st.sidebar:
                             s["points"] += pts_map.get(r, 0)
                         s["point_history"].append({"race": i, "pts": s["points"]})
 
-                # --- C. 每場正賽結束後，紀錄當下的車隊總分 (重建車隊趨勢) ---
+                # C. 紀錄當下的車隊總分 (重建趨勢)
                 for t in TEAM_CONFIG.keys():
                     t_sum = sum(s["points"] for d, s in new_stats.items() if s["team"] == t)
                     new_team_history[t].append({"race": i, "pts": t_sum})
 
             st.session_state.stats = new_stats
             st.session_state.team_history = new_team_history
-            st.success("賽季、車隊趨勢與衝刺賽記錄已完美重建！"); st.rerun()
+            st.success("賽季、車隊趨勢與衝刺賽記錄已完美重建！")
+            st.rerun()
         except Exception as e:
             st.error(f"解析失敗: {e}")
 # --- 4. 主程式 ---
