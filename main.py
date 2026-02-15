@@ -104,7 +104,7 @@ with tab_input:
             else:
                 try:
                     n = int(v)
-                    if 1 <= n <= 24 and n not in used_ranks:
+                    if 1 <= n <= 22 and n not in used_ranks:
                         processed[d] = n; used_ranks.add(n)
                     else: err = True; err_msg = f"排名 {n} 重複或超出範圍！"
                 except: err = True; err_msg = f"'{v}' 格式不對！"
