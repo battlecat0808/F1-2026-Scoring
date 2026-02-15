@@ -12,12 +12,12 @@ TEAM_CONFIG = {
     "Red Bull": {"color": "#3671C6", "drivers": {"Max Verstappen": "3", "Isack Hadjar": "66"}},
     "Mercedes": {"color": "#27F4D2", "drivers": {"George Russell": "63", "Kimi Antonelli": "12"}},
     "Aston Martin": {"color": "#229971", "drivers": {"Fernando Alonso": "14", "Lance Stroll": "18"}},
-    "Audi": {"color": "#F50A20", "drivers": {"Nico Hulkenberg": "27", "Ethan Tan": "9"}},
+    "Audi": {"color": "#F50A20", "drivers": {"Nico Hulkenberg": "27", "Gabriel Bortoleto": "5"}},
     "Williams": {"color": "#64C4FF", "drivers": {"Carlos Sainz": "55", "Alex Albon": "23"}},
     "Alpine": {"color": "#0093CC", "drivers": {"Pierre Gasly": "10", "Franco Colapinto": "43"}},
     "Racing Bulls": {"color": "#6692FF", "drivers": {"Liam Lawson": "30", "Arvid Lindblad": "17"}},
     "Haas": {"color": "#B6BABD", "drivers": {"Esteban Ocon": "31", "Oliver Bearman": "87"}},
-    "APX-CTWR": {"color": "#FFD700", "drivers": {"Yuki Tsunoda": "22", "Zhou Guanyu": "24"}},
+    "APX-CTWR": {"color": "#FFD700", "drivers": {"Yuki Tsunoda": "22", "Ethan Tan": "9"}},
     "Cadillac": {"color": "#FFCC00", "drivers": {"Sergio Perez": "11", "Valtteri Bottas": "77"}}
 }
 
