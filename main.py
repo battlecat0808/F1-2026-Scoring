@@ -244,3 +244,4 @@ compact_data = {
 st.divider()
 st.subheader("📦 壓縮存檔代碼 (精簡版)")
 st.code(json.dumps(compact_data))
+
