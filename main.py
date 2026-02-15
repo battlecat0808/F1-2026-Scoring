@@ -186,15 +186,33 @@ with tab_wcc:
         t_rows.append([trend, i, t["team"], t["pts"], f"{t['p1']}/{t['p2']}/{t['p3']}"])
     st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","P1/P2/P3"]), use_container_width=True, hide_index=True)
 
+# --- 完賽位置表 ---
 with tab_pos:
     if st.session_state.race_no > 0:
         pos_data = []
-        for d in wdc_order:
+        sorted_drivers = sorted(st.session_state.stats.keys(), key=lambda x: st.session_state.stats[x]['points'], reverse=True)
+        for d in sorted_drivers:
             s = st.session_state.stats[d]
             row = {"車手": d, "車隊": s['team']}
-            for i, r in enumerate(s["ranks"], 1): row[f"Rd.{i}"] = r
+            for i, r in enumerate(s["ranks"], 1):
+                row[f"Rd.{i}"] = 25 if r == 'R' else r
             pos_data.append(row)
-        st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+        df_pos = pd.DataFrame(pos_data)
+
+        def style_ranks_text(val):
+            if not isinstance(val, (int, float)): return ''
+            if val == 25: return 'color: #FF4B4B; font-weight: bold'
+            if val == 1: return 'color: #D4AF37; font-weight: bold'
+            if val == 2: return 'color: #808080; font-weight: bold'
+            if val == 3: return 'color: #CD7F32; font-weight: bold'
+            if 4 <= val <= 10: return 'color: #28a745; font-weight: bold'
+            return 'color: #E5B800; font-weight: normal'
+
+        rd_cols = [c for c in df_pos.columns if c.startswith("Rd.")]
+        st.dataframe(df_pos.style.applymap(style_ranks_text, subset=rd_cols), use_container_width=True, hide_index=True)
+    else:
+        st.info("尚無正賽數據。")
+
         
 with tab_chart:
     if st.session_state.race_no > 0:
