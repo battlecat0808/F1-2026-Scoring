@@ -189,13 +189,50 @@ with tab_wcc:
 with tab_pos:
     if st.session_state.race_no > 0:
         pos_data = []
-        for d in wdc_order:
+        # 按目前積分排序車手，讓榜首顯示在最上面
+        sorted_drivers = sorted(st.session_state.stats.keys(), key=lambda x: st.session_state.stats[x]['points'], reverse=True)
+        
+        for d in sorted_drivers:
             s = st.session_state.stats[d]
             row = {"車手": d, "車隊": s['team']}
-            for i, r in enumerate(s["ranks"], 1): row[f"Rd.{i}"] = r
+            # 填入每一場的名次
+            for i, r in enumerate(s["ranks"], 1):
+                row[f"Rd.{i}"] = r
             pos_data.append(row)
-        st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+        
+        df_pos = pd.DataFrame(pos_data)
 
+        # --- 樣式設定：置右 + 顏色 ---
+        def style_pos_matrix(val):
+            # 基本樣式：文字置右
+            style = 'text-align: right;'
+            
+            # 名次特定樣式
+            if val == 1:
+                return style + 'background-color: rgba(212, 175, 55, 0.3); color: #D4AF37; font-weight: bold;' # 金色
+            elif val == 2:
+                return style + 'background-color: rgba(192, 192, 192, 0.2); color: #C0C0C0;' # 銀色
+            elif val == 3:
+                return style + 'background-color: rgba(205, 127, 50, 0.2); color: #CD7F32;' # 銅色
+            elif val == 'R':
+                return style + 'color: #FF4B4B; font-weight: bold;' # DNF 紅色
+            elif isinstance(val, int) and val <= 10:
+                return style + 'color: #28a745;' # 積分區綠色
+            return style
+
+        # 找出所有 Rd. 開頭的欄位
+        rd_cols = [c for c in df_pos.columns if c.startswith("Rd.")]
+        
+        # 套用樣式：欄位對齊設為置右
+        styled_df = df_pos.style.applymap(style_pos_matrix, subset=rd_cols) \
+                                .set_properties(subset=["車手", "車隊"], **{'text-align': 'left'}) \
+                                .set_table_styles([
+                                    {'selector': 'th', 'props': [('text-align', 'right')]} # 標題也置右
+                                ])
+
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("尚無正賽數據，請先至成績輸入頁面提交。")
 with tab_chart:
     if st.session_state.race_no > 0:
         dh = [{"Race": pt["race"], "Driver": d, "Points": pt["pts"]} for d, s in st.session_state.stats.items() for pt in s['point_history']]
