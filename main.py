@@ -194,14 +194,27 @@ with tab_wcc:
     t_list = []
     for t in TEAM_CONFIG.keys():
         ds = [s for d, s in st.session_state.stats.items() if s["team"] == t]
-        t_list.append({"team": t, "pts": sum(d["points"] for d in ds), "p1": sum(d["p1"] for d in ds), "p2": sum(d["p2"] for d in ds), "p3": sum(d["p3"] for d in ds)})
-    t_sort = sorted(t_list, key=lambda x: (x["pts"], x["p1"], x["p2"], x["p3"]), reverse=True)
+        all_ranks = []
+        for d_s in ds: 
+            all_ranks.extend([r if isinstance(r, int) else 25 for r in d_s["ranks"]])
+        avg_val = sum(all_ranks)/len(all_ranks) if all_ranks else 99.0
+        
+        t_list.append({
+            "team": t, 
+            "pts": sum(d["points"] for d in ds), 
+            "p1": sum(d["p1"] for d in ds), 
+            "p2": sum(d["p2"] for d in ds), 
+            "p3": sum(d["p3"] for d in ds),
+            "avg": avg_val
+        })
+    
+    t_sort = sorted(t_list, key=lambda x: (x["pts"], x["p1"], x["p2"], x["p3"], -x["avg"]), reverse=True)
     t_rows = []
     for i, t in enumerate(t_sort, 1):
         prev = st.session_state.team_prev_rank.get(t['team'], 0)
         trend = (f"🔼 {prev-i}" if prev-i > 0 else f"🔽 {i-prev}" if prev-i < 0 else "➖") if st.session_state.race_no >= 1 and prev != 0 else ""
-        t_rows.append([trend, i, t["team"], t["pts"], f"{t['p1']}/{t['p2']}/{t['p3']}"])
-    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","P1/P2/P3"]), use_container_width=True, hide_index=True)
+        t_rows.append([trend, i, t["team"], t["pts"], round(t["avg"], 2) if t["avg"] != 99.0 else "N/A", f"{t['p1']}/{t['p2']}/{t['p3']}"])
+    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","平均名次","P1/P2/P3"]), use_container_width=True, hide_index=True)
 
 # --- 完賽位置表 ---
 with tab_pos:
