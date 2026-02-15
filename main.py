@@ -210,5 +210,5 @@ compact_data = {
     "data": {d: s["ranks"] for d, s in st.session_state.stats.items()}
 }
 st.divider()
-st.subheader("📦 2026 凱迪拉克版 存檔代碼")
+st.subheader("📦 2026 存檔代碼")
 st.code(json.dumps(compact_data))
