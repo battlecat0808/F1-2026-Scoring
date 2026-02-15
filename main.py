@@ -190,42 +190,57 @@ with tab_wcc:
 with tab_pos:
     if st.session_state.race_no > 0:
         pos_data = []
+        # 按積分排序
         sorted_drivers = sorted(st.session_state.stats.keys(), key=lambda x: st.session_state.stats[x]['points'], reverse=True)
         
         for d in sorted_drivers:
             s = st.session_state.stats[d]
             row = {"車手": d, "車隊": s['team']}
-            for i, r in enumerate(s["ranks"], 1):
-                # 統一轉為數值，方便樣式判斷
-                row[f"Rd.{i}"] = 25 if r == 'R' else r
+            # 取得該車手的所有名次，不足場次的補 None
+            for i in range(1, st.session_state.race_no + 1):
+                if i <= len(s["ranks"]):
+                    r = s["ranks"][i-1]
+                    row[f"Rd.{i}"] = 25 if r == 'R' else r
+                else:
+                    row[f"Rd.{i}"] = None 
             pos_data.append(row)
         
         df_pos = pd.DataFrame(pos_data)
-
-        # 樣式函數
-        def style_ranks_text(val):
-            if not isinstance(val, (int, float)): return ''
-            if val == 25: return 'color: #FF4B4B; font-weight: bold' # DNF 紅色
-            if val == 1: return 'color: #D4AF37; font-weight: bold'  # P1 金色
-            if val == 2: return 'color: #C0C0C0; font-weight: bold'  # P2 銀色
-            if val == 3: return 'color: #CD7F32; font-weight: bold'  # P3 銅色
-            if 4 <= val <= 10: return 'color: #28a745; font-weight: bold' # 積分區 綠色
-            return 'color: #E5B800; font-weight: normal'
-
         rd_cols = [c for c in df_pos.columns if c.startswith("Rd.")]
 
-        # --- 關鍵修正點：使用 .format 處理顯示文字 ---
-        # 這會把 25.0 變成 "DNF"，其餘數字去小數點變成整數
-        display_format = {col: (lambda v: "DNF" if v == 25 else f"{int(v)}") for col in rd_cols}
+        # 樣式函數：處理顏色
+        def style_ranks_text(val):
+            if val is None or not isinstance(val, (int, float)): return ''
+            if val == 25: return 'color: #FF4B4B; font-weight: bold'
+            if val == 1: return 'color: #D4AF37; font-weight: bold'
+            if val == 2: return 'color: #C0C0C0; font-weight: bold'
+            if val == 3: return 'color: #CD7F32; font-weight: bold'
+            if 4 <= val <= 10: return 'color: #28a745; font-weight: bold'
+            return 'color: #E5B800; font-weight: normal'
 
-        st.dataframe(
-            df_pos.style.applymap(style_ranks_text, subset=rd_cols)
-                       .format(display_format), 
-            use_container_width=True, 
-            hide_index=True
-        )
-    else:
-        st.info("尚無正賽數據。")
+        # 顯示格式化：處理小數點與 DNF
+        def format_val(val):
+            if val is None: return "-"
+            if val == 25: return "DNF"
+            try:
+                return f"{int(val)}"
+            except:
+                return str(val)
+
+        # 建立格式化字典，僅針對存在的欄位
+        display_format = {col: format_val for col in rd_cols}
+
+        # 渲染
+        try:
+            st.dataframe(
+                df_pos.style.applymap(style_ranks_text, subset=rd_cols)
+                           .format(display_format), 
+                use_container_width=True, 
+                hide_index=True
+            )
+        except Exception as e:
+            st.error(f"表格渲染出錯：{e}")
+            st.dataframe(df_pos) # 萬
         
 with tab_chart:
     if st.session_state.race_no > 0:
