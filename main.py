@@ -31,56 +31,57 @@ if "stats" not in st.session_state:
     st.session_state.form_id = 0
 
 # --- 3. 側邊欄 ---
+# --- 3. 側邊欄 (修復衝刺賽重建邏輯) ---
 with st.sidebar:
     st.header("💾 數據管理")
     backup_input = st.text_area("貼入精簡存檔代碼：", height=100)
     
-    # 確保這裡的 if 剛好縮排 4 個空格
     if st.button("載入並重建賽季"):
         try:
             raw = json.loads(backup_input)
-            # 1. 重置基礎狀態
+            # 1. 重置狀態
             st.session_state.race_no = raw["race_no"]
             st.session_state.sprint_history = raw.get("sprints", [])
-            
-            # 2. 初始化車手與車隊字典
-            new_stats = {d: {"no": c, "team": t, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0} 
-                         for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
-            new_team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
-            
-            # 3. 按場次重新模擬計算
+            st.session_state.stats = {d: {"no": c, "team": t, "points": 0, "ranks": [], "point_history": [{"race": 0, "pts": 0}], "p1": 0, "p2": 0, "p3": 0, "dnf": 0, "penalty_next": False, "prev_rank": 0} 
+                                     for t, cfg in TEAM_CONFIG.items() for d, c in cfg["drivers"].items()}
+            st.session_state.team_history = {t: [{"race": 0, "pts": 0}] for t in TEAM_CONFIG.keys()}
+
             pts_map = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
             
+            # 2. 逐週模擬以確保衝刺賽 Bonus 計算正確
             for i in range(1, st.session_state.race_no + 1):
-                # A. 處理該場之前的衝刺賽
+                curr_race = i
+                
+                # A. 檢查此正賽前是否有衝刺賽 (i-0.5)
                 for sp in st.session_state.sprint_history:
                     if sp["race_after"] == (i - 0.5):
+                        # 衝刺賽積分已在存檔中算好，直接累加
                         for d, p in sp["results"].items():
-                            if d in new_stats: new_stats[d]["points"] += p
-                
-                # B. 處理正賽積分與統計
+                            if d in st.session_state.stats:
+                                st.session_state.stats[d]["points"] += p
+                                st.session_state.stats[d]["point_history"].append({"race": i-0.5, "pts": st.session_state.stats[d]["points"]})
+
+                # B. 處理正賽
                 for d, r_list in raw["data"].items():
-                    if d in new_stats and len(r_list) >= i:
+                    if d in st.session_state.stats and len(r_list) >= i:
                         r = r_list[i-1]
-                        s = new_stats[d]
+                        s = st.session_state.stats[d]
                         s["ranks"].append(r)
-                        if r == 'R': 
+                        if r == 'R':
                             s["dnf"] += 1
                         else:
                             if r == 1: s["p1"] += 1
                             elif r == 2: s["p2"] += 1
                             elif r == 3: s["p3"] += 1
                             s["points"] += pts_map.get(r, 0)
-                        s["point_history"].append({"race": i, "pts": s["points"]})
-
-                # C. 紀錄當下的車隊總分 (重建趨勢)
+                        s["point_history"].append({"race": float(i), "pts": s["points"]})
+                
+                # C. 更新每一週後的車隊歷史
                 for t in TEAM_CONFIG.keys():
-                    t_sum = sum(s["points"] for d, s in new_stats.items() if s["team"] == t)
-                    new_team_history[t].append({"race": i, "pts": t_sum})
+                    t_sum = sum(s["points"] for d, s in st.session_state.stats.items() if s["team"] == t)
+                    st.session_state.team_history[t].append({"race": float(i), "pts": t_sum})
 
-            st.session_state.stats = new_stats
-            st.session_state.team_history = new_team_history
-            st.success("賽季、車隊趨勢與衝刺賽記錄已完美重建！")
+            st.success("✅ 賽季紀錄（含衝刺賽積分趨勢）已完美重建！")
             st.rerun()
         except Exception as e:
             st.error(f"解析失敗: {e}")
