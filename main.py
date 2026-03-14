@@ -98,7 +98,7 @@ with tabs[0]:
     top_10_names = set(wdc_order[:10])
 
     inputs = {}
-    cols = st.columns(3) # 12 隊分 3 欄
+    cols = st.columns(2) # 12 隊分 3 欄
     for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
         with cols[idx % 3]:
             st.markdown(f"**{team}**")
