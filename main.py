@@ -100,7 +100,7 @@ with tabs[0]:
     inputs = {}
     cols = st.columns(2) # 12 隊分 3 欄
     for idx, (team, cfg) in enumerate(TEAM_CONFIG.items()):
-        with cols[idx % 3]:
+        with cols[idx % 2]:
             st.markdown(f"**{team}**")
             for driver, no in cfg["drivers"].items():
                 inputs[driver] = st.text_input(f"#{no} {driver}", key=f"in_{driver}_{st.session_state.form_id}", placeholder="1-24 / R")
