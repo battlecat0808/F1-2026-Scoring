@@ -102,7 +102,7 @@ with tab_input:
             st.markdown(f"**{team}**")
             for driver, no in cfg["drivers"].items():
                 k = f"in_{driver}_{st.session_state.form_id}"
-                inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="1-22 / R")
+                inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="1-24 / R")
     
     if st.button("🚀 提交成績", use_container_width=True, type="primary"):
         processed, used_ranks, err = {}, set(), False
@@ -114,7 +114,7 @@ with tab_input:
             else:
                 try:
                     n = int(v)
-                    if 1 <= n <= 22 and n not in used_ranks:
+                    if 1 <= n <= 24 and n not in used_ranks:
                         processed[d] = n; used_ranks.add(n)
                     else: err = True; err_msg = f"排名 {n} 重複或超出範圍！"
                 except: err = True; err_msg = f"'{v}' 格式不對！"
