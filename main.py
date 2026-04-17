@@ -282,7 +282,7 @@ with tab_pos:
             return 'color: #E5B800; font-weight: normal'
 
         rd_cols = [c for c in df_pos.columns if c.startswith("Rd.")]
-        st.dataframe(df_pos.style.applymap(style_ranks_text, subset=rd_cols), use_container_width=True, hide_index=True)
+        st.dataframe(df_pos.style.map(style_ranks_text, subset=rd_cols), use_container_width=True, hide_index=True)
     else:
         st.info("尚無正賽數據。")
 
