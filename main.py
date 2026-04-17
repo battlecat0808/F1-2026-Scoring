@@ -52,13 +52,21 @@ with st.sidebar:
             pts_map = {1:25, 2:18, 3:15, 4:12, 5:10, 6:8, 7:6, 8:4, 9:2, 10:1}
             
             for i in range(1, st.session_state.race_no + 1):
-                # A. 處理該場之前的衝刺賽
+                # --- A. 處理該場正賽之前的衝刺賽 (i-0.5) ---
                 for sp in st.session_state.sprint_history:
                     if sp["race_after"] == (i - 0.5):
                         for d, p in sp["results"].items():
-                            if d in new_stats: new_stats[d]["points"] += p
-                
-                # B. 處理正賽積分與統計
+                            if d in new_stats:
+                                new_stats[d]["points"] += p
+                                # 關鍵：衝刺賽也要記錄歷史點
+                                new_stats[d]["point_history"].append({"race": i - 0.5, "pts": new_stats[d]["points"]})
+                        
+                        # 也要更新車隊歷史
+                        for t in TEAM_CONFIG.keys():
+                            t_sum = sum(s["points"] for d, s in new_stats.items() if s["team"] == t)
+                            new_team_history[t].append({"race": i - 0.5, "pts": t_sum})
+            
+                # --- B. 處理正賽積分與統計 (i) ---
                 for d, r_list in raw["data"].items():
                     if d in new_stats and len(r_list) >= i:
                         r = r_list[i-1]
@@ -71,12 +79,14 @@ with st.sidebar:
                             elif r == 2: s["p2"] += 1
                             elif r == 3: s["p3"] += 1
                             s["points"] += pts_map.get(r, 0)
-                        s["point_history"].append({"race": i, "pts": s["points"]})
-
-                # C. 紀錄當下的車隊總分 (重建趨勢)
+                        
+                        # 記錄正賽歷史
+                        s["point_history"].append({"race": float(i), "pts": s["points"]})
+            
+                # --- C. 紀錄正賽後的車隊總分 ---
                 for t in TEAM_CONFIG.keys():
                     t_sum = sum(s["points"] for d, s in new_stats.items() if s["team"] == t)
-                    new_team_history[t].append({"race": i, "pts": t_sum})
+                    new_team_history[t].append({"race": float(i), "pts": t_sum})
 
             st.session_state.stats = new_stats
             st.session_state.team_history = new_team_history
