@@ -1,3 +1,7 @@
+import os
+os.environ["STREAMLIT_PYARROW_DISABLE_WARN"] = "true"
+
+
 import streamlit as st
 import pandas as pd
 import json
