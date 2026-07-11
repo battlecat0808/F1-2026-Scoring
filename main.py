@@ -95,7 +95,6 @@ with tab_input:
                 k = f"in_{driver}_{st.session_state.form_id}"
                 inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="1-24 / R")
     
-    # 🌟 這裡修正為正確的 use_container_width 參數
     if st.button("📥 提交成績", use_container_width=True, type="primary"):
         processed, used_ranks, err = {}, set(), False
         err_msg = ""
@@ -141,8 +140,8 @@ with tab_input:
                 for d, r in processed.items():
                     if r != 'R': sprint_res_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
                 non_top_10 = [(d, r) for d, r in processed.items() if d not in top_10_names and r != 'R']
-                non_top_10.sort(key=lambda x: x[1] if isinstance(x[1], int) else 99)
-                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]  # 👈 補齊了完整獎勵陣列
+                non_top_10.sort(key=lambda x: x if isinstance(x, int) else 99)
+                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]
                 for d, r in non_top_10:
                     if bonus_pts: sprint_res_pts[d] += bonus_pts.pop(0)
                 st.session_state.sprint_history.append({"race_after": curr_mark, "results": sprint_res_pts})
@@ -162,7 +161,8 @@ with tab_wdc:
         if not ranks: return 99.0
         pr = [r if isinstance(r, int) else 25 for r in ranks]
         return round(sum(pr) / len(pr), 2)
-    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x['points'], x['p1'], x['p2'], x['p3'], -get_avg_pos(x["ranks"])), reverse=True)
+    # 🌟 這裡修正為正確的 x[1] 字典物件選取
+    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -get_avg_pos(x[1]["ranks"])), reverse=True)
     d_data = []
     for i, (n, s) in enumerate(d_sort, 1):
         trend = ""
@@ -170,7 +170,6 @@ with tab_wdc:
             diff = s['prev_rank'] - i
             trend = f"🔼 {diff}" if diff > 0 else f"🔽 {abs(diff)}" if diff < 0 else "➖"
         d_data.append([trend, i, s['no'], n, s['team'], s['points'], get_avg_pos(s["ranks"]) if get_avg_pos(s["ranks"]) != 99.0 else "N/A", f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']])
-    # 🌟 這裡修正為 2026 最新相容的寬度與 hide_index
     st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","平均名次","P1/P2/P3","DNF"]), use_container_width=True, hide_index=True)
 
 with tab_wcc:
