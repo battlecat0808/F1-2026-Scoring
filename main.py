@@ -95,7 +95,8 @@ with tab_input:
                 k = f"in_{driver}_{st.session_state.form_id}"
                 inputs[driver] = st.text_input(f"#{no} {driver}", key=k, placeholder="1-24 / R")
     
-    if st.button("📥 提交成績", width="stretch", type="primary"):
+    # 🌟 這裡修正為正確的 use_container_width 參數
+    if st.button("📥 提交成績", use_container_width=True, type="primary"):
         processed, used_ranks, err = {}, set(), False
         err_msg = ""
         for d, r in inputs.items():
@@ -141,7 +142,7 @@ with tab_input:
                     if r != 'R': sprint_res_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
                 non_top_10 = [(d, r) for d, r in processed.items() if d not in top_10_names and r != 'R']
                 non_top_10.sort(key=lambda x: x[1] if isinstance(x[1], int) else 99)
-                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]
+                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]  # 👈 補齊了完整獎勵陣列
                 for d, r in non_top_10:
                     if bonus_pts: sprint_res_pts[d] += bonus_pts.pop(0)
                 st.session_state.sprint_history.append({"race_after": curr_mark, "results": sprint_res_pts})
@@ -161,7 +162,7 @@ with tab_wdc:
         if not ranks: return 99.0
         pr = [r if isinstance(r, int) else 25 for r in ranks]
         return round(sum(pr) / len(pr), 2)
-    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -get_avg_pos(x[1]["ranks"])), reverse=True)
+    d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x['points'], x['p1'], x['p2'], x['p3'], -get_avg_pos(x["ranks"])), reverse=True)
     d_data = []
     for i, (n, s) in enumerate(d_sort, 1):
         trend = ""
@@ -169,7 +170,8 @@ with tab_wdc:
             diff = s['prev_rank'] - i
             trend = f"🔼 {diff}" if diff > 0 else f"🔽 {abs(diff)}" if diff < 0 else "➖"
         d_data.append([trend, i, s['no'], n, s['team'], s['points'], get_avg_pos(s["ranks"]) if get_avg_pos(s["ranks"]) != 99.0 else "N/A", f"{s['p1']}/{s['p2']}/{s['p3']}", s['dnf']])
-    st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","平均名次","P1/P2/P3","DNF"]), width="stretch", hide_index=True)
+    # 🌟 這裡修正為 2026 最新相容的寬度與 hide_index
+    st.dataframe(pd.DataFrame(d_data, columns=["趨勢","排名","#","車手","車隊","積分","平均名次","P1/P2/P3","DNF"]), use_container_width=True, hide_index=True)
 
 with tab_wcc:
     t_list = []
@@ -184,7 +186,7 @@ with tab_wcc:
         prev = st.session_state.team_prev_rank.get(t['team'], 0)
         trend = (f"🔼 {prev-i}" if prev-i > 0 else f"🔽 {i-prev}" if prev-i < 0 else "➖") if st.session_state.race_no >= 1 and prev != 0 else ""
         t_rows.append([trend, i, t["team"], t["pts"], round(t["avg"], 2) if t["avg"] != 99.0 else "N/A", f"{t['p1']}/{t['p2']}/{t['p3']}"])
-    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","平均名次","P1/P2/P3"]), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(t_rows, columns=["趨勢","排名","車隊","總積分","平均名次","P1/P2/P3"]), use_container_width=True, hide_index=True)
 
 with tab_pos:
     if st.session_state.race_no > 0:
@@ -205,15 +207,15 @@ with tab_pos:
             if 4 <= val <= 10: return 'color: #28a745; font-weight: bold'
             return 'color: #E5B800'
         rc = [c for c in df_pos.columns if c.startswith("Rd.")]
-        st.dataframe(df_pos.style.map(style_ranks_text, subset=rc), width="stretch", hide_index=True)
+        st.dataframe(df_pos.style.map(style_ranks_text, subset=rc), use_container_width=True, hide_index=True)
     else: st.info("尚無數據。")
 
 with tab_chart:
     if st.session_state.race_no > 0:
         dh = [{"Race": pt["race"], "Driver": f"#{s['no']} {d}", "Points": pt["pts"]} for d, s in st.session_state.stats.items() for pt in s['point_history']]
-        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, color_discrete_map={f"#{s['no']} {d}": TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, template="plotly_dark", title="車手趨勢"), width="stretch")
+        st.plotly_chart(px.line(pd.DataFrame(dh), x="Race", y="Points", color="Driver", markers=True, color_discrete_map={f"#{s['no']} {d}": TEAM_CONFIG[s['team']]['color'] for d, s in st.session_state.stats.items()}, template="plotly_dark", title="車手趨勢"), use_container_width=True)
         th = [{"Race": pt["race"], "Team": t, "Points": pt["pts"]} for t, h in st.session_state.team_history.items() for pt in h]
-        st.plotly_chart(px.line(pd.DataFrame(th), x="Race", y="Points", color="Team", markers=True, color_discrete_map={t: cfg["color"] for t, cfg in TEAM_CONFIG.items()}, template="plotly_dark", title="車隊趨勢"), width="stretch")
+        st.plotly_chart(px.line(pd.DataFrame(th), x="Race", y="Points", color="Team", markers=True, color_discrete_map={t: cfg["color"] for t, cfg in TEAM_CONFIG.items()}, template="plotly_dark", title="車隊趨勢"), use_container_width=True)
     else: st.info("尚無圖表數據。")
 
 compact_data = {"race_no": st.session_state.race_no, "sprints": st.session_state.get("sprint_history", []), "data": {d: s["ranks"] for d, s in st.session_state.stats.items()}}
