@@ -140,8 +140,11 @@ with tab_input:
                 for d, r in processed.items():
                     if r != 'R': sprint_res_pts[d] += {1: 5, 2: 3, 3: 1}.get(r, 0)
                 non_top_10 = [(d, r) for d, r in processed.items() if d not in top_10_names and r != 'R']
-                non_top_10.sort(key=lambda x: x if isinstance(x, int) else 99)
-                bonus_pts = [8, 7, 6, 5, 4, 3, 2, 1]
+                non_top_10.sort(key=lambda x: x[1] if isinstance(x[1], int) else 99)
+                
+                # 🌟 徹底解決截斷問題：用內建函數生成 8 倒數到 1，再也不用中括號
+                bonus_pts = list(range(8, 0, -1))
+                
                 for d, r in non_top_10:
                     if bonus_pts: sprint_res_pts[d] += bonus_pts.pop(0)
                 st.session_state.sprint_history.append({"race_after": curr_mark, "results": sprint_res_pts})
@@ -161,7 +164,6 @@ with tab_wdc:
         if not ranks: return 99.0
         pr = [r if isinstance(r, int) else 25 for r in ranks]
         return round(sum(pr) / len(pr), 2)
-    # 🌟 這裡修正為正確的 x[1] 字典物件選取
     d_sort = sorted(st.session_state.stats.items(), key=lambda x: (x[1]['points'], x[1]['p1'], x[1]['p2'], x[1]['p3'], -get_avg_pos(x[1]["ranks"])), reverse=True)
     d_data = []
     for i, (n, s) in enumerate(d_sort, 1):
